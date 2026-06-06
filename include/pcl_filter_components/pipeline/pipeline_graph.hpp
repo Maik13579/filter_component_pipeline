@@ -1,0 +1,57 @@
+// Copyright 2026 Maik Knof
+// SPDX-License-Identifier: Apache-2.0
+
+#ifndef PCL_FILTER_COMPONENTS__PIPELINE__PIPELINE_GRAPH_HPP_
+#define PCL_FILTER_COMPONENTS__PIPELINE__PIPELINE_GRAPH_HPP_
+
+#include <map>
+#include <string>
+#include <vector>
+
+namespace pcl_filter_components::pipeline
+{
+
+struct PipelinePort
+{
+  std::string node;
+  std::string port;
+};
+
+struct PipelineEdge
+{
+  PipelinePort from;
+  PipelinePort to;
+};
+
+struct PipelineNode
+{
+  std::string id;
+  std::string type;
+  std::string package_name;
+  std::string filter;
+  std::string component_class;
+  std::string input_type;
+  std::string output_type;
+  std::string optional_output_type;
+  std::string topic;
+  std::map<std::string, std::string> parameters;
+  std::map<std::string, std::string> qos;
+  std::map<std::string, std::string> sync;
+  double x{0.0};
+  double y{0.0};
+};
+
+struct PipelineGraph
+{
+  int version{1};
+  std::vector<PipelineNode> nodes;
+  std::vector<PipelineEdge> edges;
+};
+
+PipelineGraph loadPipelineGraph(const std::string & path);
+void validatePipelineGraph(const PipelineGraph & graph);
+std::string defaultComponentClass(const std::string & package_name, const std::string & filter);
+
+}  // namespace pcl_filter_components::pipeline
+
+#endif  // PCL_FILTER_COMPONENTS__PIPELINE__PIPELINE_GRAPH_HPP_

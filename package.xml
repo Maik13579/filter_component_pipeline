@@ -8,6 +8,7 @@
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <depend>rclcpp</depend>
   <depend>rclcpp_components</depend>
@@ -17,13 +18,43 @@
   <depend>pcl_msgs</depend>
   <depend>pcl_conversions</depend>
   <depend>pcl_ros</depend>
+  <depend>yaml_cpp_vendor</depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>python_qt_binding</exec_depend>
+  <exec_depend>rqt_gui</exec_depend>
+  <exec_depend>rqt_gui_py</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
-    <pcl_filter_component filter="VoxelGridXYZI"/>
-    <pcl_filter_component filter="PassThroughXYZI"/>
-    <pcl_filter_component filter="CropBoxXYZI"/>
+    <pcl_filter_component
+      filter="VoxelGridXYZI"
+      input="PointXYZI"
+      output="PointXYZI"
+      optional_output="PointIndices"/>
+    <pcl_filter_component
+      filter="PassThroughXYZI"
+      input="PointXYZI"
+      output="PointXYZI"
+      optional_output="PointIndices"/>
+    <pcl_filter_component
+      filter="CropBoxXYZI"
+      input="PointXYZI"
+      output="PointXYZI"
+      optional_output="PointIndices"/>
+    <pcl_filter_component
+      type="PointXYZI"
+      type_adapter="pcl_filter_components::ros::PclCloudAdapterPointXYZI"
+      message_type="sensor_msgs/msg/PointCloud2"/>
+    <pcl_filter_component
+      type="PointIndices"
+      type_adapter="pcl_filter_components::ros::PclIndicesAdapter"
+      message_type="pcl_msgs/msg/PointIndices"/>
+    <rqt_gui plugin="${prefix}/plugin.xml"/>
   </export>
 </package>

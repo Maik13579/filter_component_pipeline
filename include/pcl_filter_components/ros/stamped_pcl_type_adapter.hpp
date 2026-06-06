@@ -55,6 +55,8 @@ using PclCloudAdapter = StampedPclCloudAdapter<PointT>;
 
 using StampedPclNormalCloudAdapter = StampedPclCloudAdapter<pcl::Normal>;
 using PclNormalCloudAdapter = StampedPclNormalCloudAdapter;
+using StampedPclCloudAdapterPointXYZI = StampedPclCloudAdapter<pcl::PointXYZI>;
+using PclCloudAdapterPointXYZI = StampedPclCloudAdapterPointXYZI;
 
 }  // namespace pcl_filter_components::ros
 
