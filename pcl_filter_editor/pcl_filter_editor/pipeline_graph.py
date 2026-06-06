@@ -31,8 +31,6 @@ class Edge:
         data: dict[str, Any] = {"from": self.source.to_dict(), "to": self.target.to_dict()}
         if self.topic:
             data["topic"] = self.topic
-        if self.qos:
-            data["qos"] = self.qos
         if self.position:
             data["position"] = self.position
         return data
@@ -51,6 +49,8 @@ class Node:
     topic: str = ""
     parameters: dict[str, Any] = field(default_factory=dict)
     qos: dict[str, Any] = field(default_factory=dict)
+    inputs: dict[str, Any] = field(default_factory=dict)
+    outputs: dict[str, Any] = field(default_factory=dict)
     sync: dict[str, Any] = field(default_factory=dict)
     position: dict[str, float] = field(default_factory=lambda: {"x": 0.0, "y": 0.0})
 
@@ -73,9 +73,9 @@ class Node:
             value = getattr(self, key)
             if value:
                 data[key] = value
-        for key in ("parameters", "qos", "sync"):
+        for key in ("parameters", "inputs", "outputs", "sync"):
             value = getattr(self, key)
-            if value:
+            if value and (self.type == "filter" or key not in {"inputs", "outputs"}):
                 data[key] = value
         return data
 
@@ -175,7 +175,9 @@ def graph_from_dict(data: dict[str, Any]) -> Graph:
                 output_type=item.get("output_type", ""),
                 topic=item.get("topic", ""),
                 parameters=item.get("parameters", {}) or {},
-                qos=item.get("qos", {}) or {},
+                qos={},
+                inputs=item.get("inputs", {}) or {},
+                outputs=item.get("outputs", {}) or {},
                 sync=item.get("sync", {}) or {},
                 position=item.get("position", {"x": 0.0, "y": 0.0}) or {"x": 0.0, "y": 0.0},
             )
@@ -186,7 +188,7 @@ def graph_from_dict(data: dict[str, Any]) -> Graph:
                 PortRef(item["from"]["node"], item["from"].get("port", "")),
                 PortRef(item["to"]["node"], item["to"].get("port", "")),
                 item.get("topic", ""),
-                item.get("qos", {}) or {},
+                {},
                 item.get("position", {}) or {},
             )
         )
@@ -215,7 +217,7 @@ def _port_name_for_type(stream_type: str, index: int, total: int, outgoing: bool
     if stream_type == "PointIndices":
         return "indices"
     if stream_type.startswith("Point"):
-        return stream_type[5:].lower() or "out"
+        return "cloud"
     return stream_type.replace("/", "_").replace(":", "_").lower() or "out"
 
 

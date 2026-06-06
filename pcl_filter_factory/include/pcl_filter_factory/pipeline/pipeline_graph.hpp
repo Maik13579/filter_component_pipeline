@@ -40,6 +40,8 @@ struct PipelineNode
   std::string topic;
   std::map<std::string, std::string> parameters;
   std::map<std::string, std::string> qos;
+  std::map<std::string, std::map<std::string, std::string>> inputs;
+  std::map<std::string, std::map<std::string, std::string>> outputs;
   std::map<std::string, std::string> sync;
   double x{0.0};
   double y{0.0};

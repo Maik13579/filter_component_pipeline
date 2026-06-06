@@ -3,7 +3,6 @@ voxel_grid_filter:
     inputs.cloud.topic: "/points/raw"
     outputs.cloud.topic: "/points/voxelized"
     outputs.indices.topic: "/points/voxelized_indices"
-    queue_size: 5
     filter:
       leaf_size_x: 0.05
       leaf_size_y: 0.05
@@ -16,7 +15,6 @@ passthrough_filter:
     inputs.cloud.topic: "/points/voxelized"
     outputs.cloud.topic: "/points/passthrough"
     outputs.indices.topic: "/points/passthrough_indices"
-    queue_size: 5
     filter:
       field_name: "z"
       min_value: -1.0
@@ -29,7 +27,6 @@ crop_box_filter:
     inputs.cloud.topic: "/points/passthrough"
     outputs.cloud.topic: "/points/filtered"
     outputs.indices.topic: "/points/filtered_indices"
-    queue_size: 5
     filter:
       min_x: -10.0
       min_y: -10.0

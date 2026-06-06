@@ -20,16 +20,19 @@ nodes:
       filter.leaf_size_z: 0.1
       filter.invert: false
       filter.output_indices: false
-      queue_size: 5
+    inputs:
+      cloud:
+        qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
+    outputs:
+      cloud:
+        qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
+      indices:
+        qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
     position: {x: 280.0, y: 160.0}
   - type: topic
     topic: /pcl_pipeline/voxel_filtered
     input_type: PointXYZI
     output_type: PointXYZI
-    qos:
-      reliability: best_effort
-      history: keep_last
-      depth: 5
     position: {x: 280.0, y: 320.0}
   - type: filter
     name: CropBoxXYZI_1
@@ -47,7 +50,14 @@ nodes:
       filter.max_z: 3.0
       filter.invert: false
       filter.output_indices: false
-      queue_size: 5
+    inputs:
+      cloud:
+        qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
+    outputs:
+      cloud:
+        qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
+      indices:
+        qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
     position: {x: 280.0, y: 480.0}
   - type: topic
     topic: /points/output

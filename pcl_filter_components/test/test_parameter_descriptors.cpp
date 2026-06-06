@@ -70,18 +70,35 @@ void expectCommonParameterMetadata(const NodeT & node)
     node,
     {
       "inputs.cloud.topic",
+      "inputs.cloud.qos.reliability",
+      "inputs.cloud.qos.history",
+      "inputs.cloud.qos.depth",
+      "inputs.cloud.qos.durability",
       "outputs.cloud.topic",
+      "outputs.cloud.qos.reliability",
+      "outputs.cloud.qos.history",
+      "outputs.cloud.qos.depth",
+      "outputs.cloud.qos.durability",
       "outputs.indices.topic",
-      "queue_size",
+      "outputs.indices.qos.reliability",
+      "outputs.indices.qos.history",
+      "outputs.indices.qos.depth",
+      "outputs.indices.qos.durability",
       "filter.output_indices",
     });
-  expectIntegerRange(node, "queue_size");
+  expectIntegerRange(node, "inputs.cloud.qos.depth");
+  expectIntegerRange(node, "outputs.cloud.qos.depth");
+  expectIntegerRange(node, "outputs.indices.qos.depth");
 
   EXPECT_EQ(node.get_parameter("inputs.cloud.topic").as_string(), "/points/input");
+  EXPECT_EQ(node.get_parameter("inputs.cloud.qos.reliability").as_string(), "best_effort");
+  EXPECT_EQ(node.get_parameter("inputs.cloud.qos.history").as_string(), "keep_last");
+  EXPECT_EQ(node.get_parameter("inputs.cloud.qos.depth").as_int(), 5);
+  EXPECT_EQ(node.get_parameter("inputs.cloud.qos.durability").as_string(), "volatile");
   EXPECT_EQ(node.get_parameter("outputs.cloud.topic").as_string(), "/points/output");
   EXPECT_EQ(node.get_parameter("outputs.indices.topic").as_string(), "/points/indices");
-  EXPECT_EQ(node.get_parameter("queue_size").as_int(), 5);
   EXPECT_FALSE(node.get_parameter("filter.output_indices").as_bool());
+  EXPECT_FALSE(node.has_parameter("queue_size"));
   EXPECT_FALSE(node.has_parameter("sync.policy"));
   EXPECT_FALSE(node.has_parameter("sync.queue_size"));
   EXPECT_FALSE(node.has_parameter("sync.slop"));
@@ -198,21 +215,37 @@ TEST(ParameterDescriptors, PointCloudMergerXYZIParametersExposeEditorMetadata)
     *node,
     {
       "inputs.input_1.topic",
+      "inputs.input_1.qos.reliability",
+      "inputs.input_1.qos.history",
+      "inputs.input_1.qos.depth",
+      "inputs.input_1.qos.durability",
       "inputs.input_2.topic",
+      "inputs.input_2.qos.reliability",
+      "inputs.input_2.qos.history",
+      "inputs.input_2.qos.depth",
+      "inputs.input_2.qos.durability",
       "outputs.cloud.topic",
-      "queue_size",
+      "outputs.cloud.qos.reliability",
+      "outputs.cloud.qos.history",
+      "outputs.cloud.qos.depth",
+      "outputs.cloud.qos.durability",
       "sync.policy",
       "sync.queue_size",
       "sync.slop",
     });
-  expectIntegerRange(*node, "queue_size");
+  expectIntegerRange(*node, "inputs.input_1.qos.depth");
+  expectIntegerRange(*node, "inputs.input_2.qos.depth");
+  expectIntegerRange(*node, "outputs.cloud.qos.depth");
   expectIntegerRange(*node, "sync.queue_size");
   expectFloatingPointRange(*node, "sync.slop");
 
   EXPECT_EQ(node->get_parameter("inputs.input_1.topic").as_string(), "/points/input_a");
   EXPECT_EQ(node->get_parameter("inputs.input_2.topic").as_string(), "/points/input_b");
   EXPECT_EQ(node->get_parameter("outputs.cloud.topic").as_string(), "/points/output");
-  EXPECT_EQ(node->get_parameter("queue_size").as_int(), 5);
+  EXPECT_EQ(node->get_parameter("inputs.input_1.qos.reliability").as_string(), "best_effort");
+  EXPECT_EQ(node->get_parameter("inputs.input_2.qos.depth").as_int(), 5);
+  EXPECT_EQ(node->get_parameter("outputs.cloud.qos.durability").as_string(), "volatile");
+  EXPECT_FALSE(node->has_parameter("queue_size"));
   EXPECT_FALSE(node->has_parameter("filter.output_indices"));
   EXPECT_EQ(node->get_parameter("sync.policy").as_string(), "ExactTime");
   EXPECT_EQ(node->get_parameter("sync.queue_size").as_int(), 10);

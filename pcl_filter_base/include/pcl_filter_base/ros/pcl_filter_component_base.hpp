@@ -90,6 +90,10 @@ public:
     std::string name;
     std::string default_topic;
     std::string description;
+    std::string default_reliability{"best_effort"};
+    std::string default_history{"keep_last"};
+    int default_depth{5};
+    std::string default_durability{"volatile"};
     std::type_index adapter_type;
     std::function<std::unique_ptr<PublisherConcept>(
         PclFilterComponentBase &,
@@ -113,6 +117,10 @@ public:
       name,
       default_topic,
       description,
+      "best_effort",
+      "keep_last",
+      5,
+      "volatile",
       std::type_index(typeid(AdapterT)),
       {},
       [](
@@ -140,6 +148,10 @@ public:
       name,
       default_topic,
       description,
+      "best_effort",
+      "keep_last",
+      5,
+      "volatile",
       std::type_index(typeid(AdapterT)),
       [](
         PclFilterComponentBase & node,
@@ -168,6 +180,7 @@ public:
         inputTopicParameterName(port.name),
         port.default_topic,
         makeParameterDescriptor(port.description));
+      declarePortQosParameters("inputs", port);
     }
     for (const auto & port : output_ports_) {
       declareParameterIfNotDeclared(
@@ -175,15 +188,8 @@ public:
         outputTopicParameterName(port.name),
         port.default_topic,
         makeParameterDescriptor(port.description));
+      declarePortQosParameters("outputs", port);
     }
-    declareParameterIfNotDeclared(
-      *this,
-      "queue_size",
-      5,
-      makeIntegerRangeParameterDescriptor(
-        "Depth used for input subscriptions and output publishers.",
-        1,
-        100000));
     if (input_ports_.size() > 1U) {
       declareParameterIfNotDeclared(
         *this,
@@ -219,21 +225,25 @@ protected:
     return "outputs." + port_name + ".topic";
   }
 
+  static std::string portQosParameterName(
+    const std::string & direction,
+    const std::string & port_name,
+    const std::string & field)
+  {
+    return direction + "." + port_name + ".qos." + field;
+  }
+
   CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override
   {
     (void)previous_state;
 
-    queue_size_ = getParameter<int>(*this, "queue_size");
     readPortTopics();
 
     filter_ = FilterT{};
     configureFilter();
 
-    const auto depth = queue_size_ > 0 ? static_cast<size_t>(queue_size_) : 1U;
-    const auto qos = rclcpp::SensorDataQoS().keep_last(depth);
-
     active_ = false;
-    configureInterfaces(qos);
+    configureInterfaces();
 
     return CallbackReturn::SUCCESS;
   }
@@ -263,7 +273,7 @@ protected:
 
   virtual void configureFilter() = 0;
 
-  virtual void configureInterfaces(const rclcpp::QoS & qos)
+  virtual void configureInterfaces()
   {
     for (const auto & port : output_ports_) {
       if (!port.create_publisher) {
@@ -271,7 +281,7 @@ protected:
       }
       publishers_.emplace(
         port.name,
-        port.create_publisher(*this, outbound_topics_.at(port.name), qos));
+        port.create_publisher(*this, outbound_topics_.at(port.name), portQos("outputs", port.name)));
     }
 
     auto sync_options = pcl_filter_synchronizer::SynchronizerOptions{};
@@ -295,7 +305,7 @@ protected:
         *this,
         port.name,
         inbound_topics_.at(port.name),
-        qos);
+        portQos("inputs", port.name));
     }
   }
 
@@ -387,7 +397,6 @@ protected:
   std::vector<PortDescriptor> output_ports_;
   std::unordered_map<std::string, std::string> inbound_topics_;
   std::unordered_map<std::string, std::string> outbound_topics_;
-  int queue_size_{5};
 
   void readPortTopics()
   {
@@ -413,6 +422,83 @@ protected:
     } else {
       throw std::runtime_error("The selected filter does not support point-indices output");
     }
+  }
+
+  void declarePortQosParameters(const std::string & direction, const PortDescriptor & port)
+  {
+    declareParameterIfNotDeclared(
+      *this,
+      portQosParameterName(direction, port.name, "reliability"),
+      port.default_reliability,
+      makeParameterDescriptor(
+        "QoS reliability for port '" + port.name + "'.",
+        "Supported values: best_effort, reliable."));
+    declareParameterIfNotDeclared(
+      *this,
+      portQosParameterName(direction, port.name, "history"),
+      port.default_history,
+      makeParameterDescriptor(
+        "QoS history policy for port '" + port.name + "'.",
+        "Supported values: keep_last, keep_all."));
+    declareParameterIfNotDeclared(
+      *this,
+      portQosParameterName(direction, port.name, "depth"),
+      port.default_depth,
+      makeIntegerRangeParameterDescriptor(
+        "QoS history depth for port '" + port.name + "'.",
+        1,
+        100000));
+    declareParameterIfNotDeclared(
+      *this,
+      portQosParameterName(direction, port.name, "durability"),
+      port.default_durability,
+      makeParameterDescriptor(
+        "QoS durability for port '" + port.name + "'.",
+        "Supported values: volatile, transient_local."));
+  }
+
+  rclcpp::QoS portQos(const std::string & direction, const std::string & port_name)
+  {
+    const auto reliability = getParameter<std::string>(
+      *this,
+      portQosParameterName(direction, port_name, "reliability"));
+    const auto history = getParameter<std::string>(
+      *this,
+      portQosParameterName(direction, port_name, "history"));
+    const auto depth_value = getParameter<int>(
+      *this,
+      portQosParameterName(direction, port_name, "depth"));
+    const auto durability = getParameter<std::string>(
+      *this,
+      portQosParameterName(direction, port_name, "durability"));
+
+    auto qos = rclcpp::QoS(rclcpp::KeepLast(depth_value > 0 ? static_cast<size_t>(depth_value) : 1U));
+    if (history == "keep_all") {
+      qos.keep_all();
+    } else if (history == "keep_last") {
+      qos.keep_last(depth_value > 0 ? static_cast<size_t>(depth_value) : 1U);
+    } else {
+      throw std::runtime_error("Unsupported QoS history '" + history + "' for " + direction + "." + port_name);
+    }
+
+    if (reliability == "best_effort") {
+      qos.best_effort();
+    } else if (reliability == "reliable") {
+      qos.reliable();
+    } else {
+      throw std::runtime_error(
+        "Unsupported QoS reliability '" + reliability + "' for " + direction + "." + port_name);
+    }
+
+    if (durability == "volatile") {
+      qos.durability_volatile();
+    } else if (durability == "transient_local") {
+      qos.transient_local();
+    } else {
+      throw std::runtime_error(
+        "Unsupported QoS durability '" + durability + "' for " + direction + "." + port_name);
+    }
+    return qos;
   }
 
   bool active_{false};

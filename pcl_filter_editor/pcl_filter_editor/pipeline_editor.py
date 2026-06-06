@@ -38,7 +38,9 @@ from python_qt_binding.QtWidgets import (
 from qt_gui.plugin import Plugin
 
 from pcl_filter_editor.filter_discovery import FilterExport, discover_filters
+from pcl_filter_editor.parameter_discovery import ComponentParameterDiscovery
 from pcl_filter_editor.pipeline_graph import Edge, Graph, Node, PortRef, load_graph, save_graph
+from pcl_filter_editor.runtime import LivePipelineRuntime
 
 
 class EdgeHandleItem(QGraphicsPolygonItem):
@@ -221,6 +223,8 @@ class PipelineView(QGraphicsView):
         self.editor = editor
         self.setRenderHint(QPainter.Antialiasing)
         self.setDragMode(QGraphicsView.RubberBandDrag)
+        self._panning = False
+        self._last_pan_pos = None
 
     def mouseDoubleClickEvent(self, event) -> None:
         item = self.itemAt(event.pos())
@@ -243,6 +247,12 @@ class PipelineView(QGraphicsView):
         super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MiddleButton:
+            self._panning = True
+            self._last_pan_pos = event.pos()
+            self.setCursor(Qt.ClosedHandCursor)
+            event.accept()
+            return
         if event.button() == Qt.LeftButton and self.editor.begin_connection_drag(
             self.itemAt(event.pos()),
             self.mapToScene(event.pos()),
@@ -251,6 +261,13 @@ class PipelineView(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
+        if self._panning and self._last_pan_pos is not None:
+            delta = event.pos() - self._last_pan_pos
+            self._last_pan_pos = event.pos()
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            event.accept()
+            return
         if self.editor.update_connection_drag(self.mapToScene(event.pos())):
             return
         if self.editor.update_edge_rewire(self.mapToScene(event.pos())):
@@ -258,6 +275,12 @@ class PipelineView(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MiddleButton and self._panning:
+            self._panning = False
+            self._last_pan_pos = None
+            self.unsetCursor()
+            event.accept()
+            return
         if event.button() == Qt.LeftButton and self.editor.finish_connection_drag(
             self.itemAt(event.pos()),
             self.mapToScene(event.pos()),
@@ -301,7 +324,14 @@ class PipelineEditor(Plugin):
         super().__init__(context)
         self.setObjectName("PipelineEditor")
         self.discovery = discover_filters()
+        self.parameter_discovery = ComponentParameterDiscovery()
+        self.parameter_descriptions: dict[str, dict[str, str]] = {}
         self.graph = Graph()
+        self.live_runtime = LivePipelineRuntime()
+        self.last_live_runtime_error = ""
+        self.selected_logical_types = {
+            item.point_type for item in self.discovery.types if item.point_type
+        }
         self.items_by_id: dict[str, NodeItem] = {}
         self.edge_items: list[EdgeItem] = []
         self.connection_source: NodeItem | None = None
@@ -322,7 +352,11 @@ class PipelineEditor(Plugin):
         side.addWidget(QLabel("Filters"))
         self.filter_search = QLineEdit()
         self.filter_search.setPlaceholderText("Search filters")
-        side.addWidget(self.filter_search)
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(self.filter_search, 1)
+        self.type_filter_button = QPushButton("Type Filter")
+        filter_row.addWidget(self.type_filter_button)
+        side.addLayout(filter_row)
         self.filter_list = QListWidget()
         self.visible_filters: list[FilterExport] = []
         self._refresh_filter_list()
@@ -365,6 +399,7 @@ class PipelineEditor(Plugin):
         zoom_in.clicked.connect(lambda: self.zoom_canvas(1.2))
         zoom_reset.clicked.connect(self.reset_zoom)
         self.filter_search.textChanged.connect(self._refresh_filter_list)
+        self.type_filter_button.clicked.connect(self._edit_type_filter)
         self.filter_list.itemDoubleClicked.connect(lambda _item: self._add_filter())
         save.clicked.connect(self._save)
         load.clicked.connect(self._load)
@@ -372,7 +407,7 @@ class PipelineEditor(Plugin):
         context.add_widget(self.widget)
 
     def shutdown_plugin(self) -> None:
-        pass
+        self.live_runtime.stop()
 
     def theme_color(self, role: str) -> QColor:
         palette = self.widget.palette()
@@ -439,6 +474,7 @@ class PipelineEditor(Plugin):
         self.scene.addItem(item)
         self.items_by_id[node.id] = item
         self.expand_scene_for_item(item)
+        self._sync_live_pipeline()
 
     def _set_top_down_mode(self, enabled: bool) -> None:
         self.top_down_mode = enabled
@@ -472,11 +508,14 @@ class PipelineEditor(Plugin):
         self.visible_filters = [
             export
             for export in self.discovery.filters
-            if not query
-            or query in export.filter.lower()
-            or query in export.package.lower()
-            or query in export.input_type.lower()
-            or query in export.output_type.lower()
+            if self._filter_matches_selected_types(export)
+            and (
+                not query
+                or query in export.filter.lower()
+                or query in export.package.lower()
+                or query in export.input_type.lower()
+                or query in export.output_type.lower()
+            )
         ]
         self.filter_list.clear()
         for export in self.visible_filters:
@@ -484,11 +523,44 @@ class PipelineEditor(Plugin):
                 f"{export.package}/{export.filter} [{export.input_type} -> {export.output_type}]"
             )
 
+    def _filter_matches_selected_types(self, export: FilterExport) -> bool:
+        if not self.selected_logical_types:
+            return False
+        types = set(self._stream_types(export.input_type))
+        types.update(self._stream_types(export.output_type))
+        return bool(types.intersection(self.selected_logical_types))
+
+    def _edit_type_filter(self) -> None:
+        dialog = QDialog(self.widget)
+        dialog.setWindowTitle("Type Filter")
+        layout = QVBoxLayout(dialog)
+        widgets: dict[str, QCheckBox] = {}
+        for item in sorted(self.discovery.types, key=lambda value: (value.point_type, value.type_adapter)):
+            if not item.point_type:
+                continue
+            label = item.point_type
+            if item.type_adapter:
+                label = f"{label} - {item.type_adapter}"
+            checkbox = QCheckBox(label, dialog)
+            checkbox.setChecked(item.point_type in self.selected_logical_types)
+            widgets[item.point_type] = checkbox
+            layout.addWidget(checkbox)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec_() == QDialog.Accepted:
+            self.selected_logical_types = {
+                point_type for point_type, checkbox in widgets.items() if checkbox.isChecked()
+            }
+            self._refresh_filter_list()
+
     def _add_filter(self) -> None:
         export = self._selected_filter()
         if export is None:
             QMessageBox.warning(self.widget, "No Filter", "Select a filter first.")
             return
+        metadata = self._component_parameter_metadata(export)
         name = self._new_id(export.filter)
         x = len(self.graph.nodes) * 34.0
         y = len(self.graph.nodes) * 18.0
@@ -502,57 +574,45 @@ class PipelineEditor(Plugin):
                 component_class=export.component_class,
                 input_type=export.input_type,
                 output_type=export.output_type,
-                parameters=self._default_parameters(export.filter),
+                parameters=metadata.defaults,
+                inputs=self._default_port_configs(export.input_type, False),
+                outputs=self._default_port_configs(export.output_type, True),
                 sync=self._default_sync() if self._has_multiple_input_types(export.input_type) else {},
                 position={"x": x, "y": y},
             )
         )
 
-    def _default_parameters(self, filter_name: str) -> dict[str, object]:
-        common = {"queue_size": 5, "filter.output_indices": False}
-        filter_defaults: dict[str, dict[str, object]] = {
-            "VoxelGridXYZI": {
-                "filter.leaf_size_x": 0.05,
-                "filter.leaf_size_y": 0.05,
-                "filter.leaf_size_z": 0.05,
-                "filter.invert": False,
-            },
-            "PassThroughXYZI": {
-                "filter.field_name": "z",
-                "filter.min_value": -1.0,
-                "filter.max_value": 2.0,
-                "filter.invert": False,
-            },
-            "CropBoxXYZI": {
-                "filter.min_x": -10.0,
-                "filter.min_y": -10.0,
-                "filter.min_z": -2.0,
-                "filter.max_x": 10.0,
-                "filter.max_y": 10.0,
-                "filter.max_z": 3.0,
-                "filter.invert": False,
-            },
+    def _default_qos(self) -> dict[str, object]:
+        return {
+            "reliability": "best_effort",
+            "history": "keep_last",
+            "depth": 5,
+            "durability": "volatile",
         }
-        return {**common, **filter_defaults.get(filter_name, {})}
 
-    def _parameter_description(self, parameter_name: str) -> str:
-        descriptions = {
-            "queue_size": "Subscription queue depth for incoming point cloud messages.",
-            "filter.output_indices": "Publish the selected point indices instead of the filtered cloud.",
-            "filter.leaf_size_x": "Voxel leaf size along the X axis in meters.",
-            "filter.leaf_size_y": "Voxel leaf size along the Y axis in meters.",
-            "filter.leaf_size_z": "Voxel leaf size along the Z axis in meters.",
-            "filter.field_name": "Point field used by the pass-through filter.",
-            "filter.min_value": "Minimum accepted field value.",
-            "filter.max_value": "Maximum accepted field value.",
-            "filter.min_x": "Minimum accepted X coordinate.",
-            "filter.min_y": "Minimum accepted Y coordinate.",
-            "filter.min_z": "Minimum accepted Z coordinate.",
-            "filter.max_x": "Maximum accepted X coordinate.",
-            "filter.max_y": "Maximum accepted Y coordinate.",
-            "filter.max_z": "Maximum accepted Z coordinate.",
-            "filter.invert": "Invert the filter result.",
+    def _default_port_configs(self, type_value: str, outgoing: bool) -> dict[str, object]:
+        return {
+            port: {"qos": self._default_qos()}
+            for port, _stream_type, _label in self._port_options_for_type(type_value, outgoing)
         }
+
+    def _component_parameter_metadata(self, export: FilterExport):
+        metadata = self.parameter_discovery.parameters_for_component(export.package, export.component_class)
+        self.parameter_descriptions[export.component_class] = metadata.descriptions
+        return metadata
+
+    def _parameter_description(self, node: Node, parameter_name: str) -> str:
+        descriptions = self.parameter_descriptions.get(node.component_class)
+        if descriptions is None:
+            export = FilterExport(
+                package=node.package,
+                filter=node.filter,
+                component_class=node.component_class,
+                input_type=node.input_type,
+                output_type=node.output_type,
+            )
+            metadata = self._component_parameter_metadata(export)
+            descriptions = metadata.descriptions
         return descriptions.get(parameter_name, "")
 
     def _selected_node_items(self) -> list[NodeItem]:
@@ -581,8 +641,7 @@ class PipelineEditor(Plugin):
         if stream_type == "PointIndices":
             return "indices"
         if stream_type.startswith("Point"):
-            name = stream_type[5:].lower()
-            return name or ("out" if outgoing else "in")
+            return "cloud"
         return stream_type.replace("/", "_").replace(":", "_").lower() or ("out" if outgoing else "in")
 
     def _type_for_port(self, value: str, port: str, outgoing: bool) -> str:
@@ -597,7 +656,10 @@ class PipelineEditor(Plugin):
         return types[0] if outgoing else ""
 
     def _port_options(self, node: Node, outgoing: bool) -> list[tuple[str, str, str]]:
-        types = self._stream_types(node.output_type if outgoing else node.input_type)
+        return self._port_options_for_type(node.output_type if outgoing else node.input_type, outgoing)
+
+    def _port_options_for_type(self, type_value: str, outgoing: bool) -> list[tuple[str, str, str]]:
+        types = self._stream_types(type_value)
         options: list[tuple[str, str, str]] = []
         for index, stream_type in enumerate(types):
             port = self._port_name_for_type(stream_type, index, len(types), outgoing)
@@ -817,6 +879,7 @@ class PipelineEditor(Plugin):
         self._add_edge_item(edge, source, target)
         self._refresh_port_visibility()
         self.status.setText(f"Connected {source.node.id} -> {target.node.id}")
+        self._sync_live_pipeline()
 
     def _create_topic_between(
         self,
@@ -844,7 +907,6 @@ class PipelineEditor(Plugin):
                 topic=topic_name,
                 input_type=topic_type,
                 output_type=topic_type,
-                qos={"reliability": "best_effort", "history": "keep_last", "depth": 5},
                 position=position,
             )
         )
@@ -867,7 +929,6 @@ class PipelineEditor(Plugin):
                 topic=topic_name,
                 input_type=topic_type,
                 output_type=topic_type,
-                qos={"reliability": "best_effort", "history": "keep_last", "depth": 5},
                 position={"x": x, "y": y},
             )
         )
@@ -1029,6 +1090,7 @@ class PipelineEditor(Plugin):
         self._rebuild_edges()
         self._refresh_port_visibility()
         self.status.setText(f"Rewired to {topic_item.node.id}")
+        self._sync_live_pipeline()
         return True
 
     def finish_connection_drag(self, clicked_item, scene_pos: QPointF) -> bool:
@@ -1099,6 +1161,7 @@ class PipelineEditor(Plugin):
             self.items_by_id.pop(item.node.id, None)
         self._rebuild_edges()
         self._refresh_port_visibility()
+        self._sync_live_pipeline()
 
     def edit_selected(self) -> None:
         selected_nodes = self._selected_node_items()
@@ -1121,7 +1184,6 @@ class PipelineEditor(Plugin):
                 {
                     "topic": item.edge.topic or item._label_text(),
                     "type": source_type or target_type or "unknown",
-                    "qos": item.edge.qos,
                 },
                 indent=2,
             )
@@ -1148,8 +1210,8 @@ class PipelineEditor(Plugin):
                 QMessageBox.critical(self.widget, "Duplicate Topic", f"Topic {topic} is already used.")
                 return
             item.edge.topic = topic
-            item.edge.qos = data.get("qos", {}) or {}
             item.refresh()
+            self._sync_live_pipeline()
 
     def edit_node(self, item: NodeItem) -> None:
         node = item.node
@@ -1159,9 +1221,11 @@ class PipelineEditor(Plugin):
         name_edit: QLineEdit | None = None
         topic_edit: QLineEdit | None = None
         parameter_widgets: dict[str, QLineEdit | QCheckBox] = {}
-        qos_widgets: dict[str, QLineEdit | QComboBox] = {}
+        input_qos_widgets: dict[str, dict[str, QLineEdit | QComboBox]] = {}
+        output_qos_widgets: dict[str, dict[str, QLineEdit | QComboBox]] = {}
         sync_widgets: dict[str, QLineEdit | QComboBox] = {}
         if node.type == "filter":
+            self._ensure_filter_port_configs(node)
             if self._filter_has_multiple_inputs(node) and not node.sync:
                 node.sync = self._default_sync()
             tabs = QTabWidget(dialog)
@@ -1186,7 +1250,7 @@ class PipelineEditor(Plugin):
                         widget.setChecked(value)
                     else:
                         widget = QLineEdit(str(value), dialog)
-                    description = self._parameter_description(key)
+                    description = self._parameter_description(node, key)
                     if description:
                         label = QLabel(key, dialog)
                         label.setToolTip(description)
@@ -1199,7 +1263,9 @@ class PipelineEditor(Plugin):
                     parameters_form.addRow(label, widget)
             else:
                 parameters_form.addRow(QLabel("No editable parameters.", dialog))
-            tabs.addTab(parameters, "Parameters")
+            tabs.addTab(parameters, "Params")
+            input_qos_widgets = self._add_port_tab(tabs, dialog, node, False)
+            output_qos_widgets = self._add_port_tab(tabs, dialog, node, True)
             if self._filter_has_multiple_inputs(node):
                 sync = QWidget(dialog)
                 sync_form = QFormLayout(sync)
@@ -1223,20 +1289,7 @@ class PipelineEditor(Plugin):
             topic_type = node.output_type or node.input_type
             form.addRow("Topic type", self._readonly_field(topic_type or "unknown"))
             if node.type == "topic":
-                form.addRow(QLabel("QoS", dialog))
-                reliability = QComboBox(dialog)
-                reliability.addItems(["", "best_effort", "reliable"])
-                reliability.setCurrentText(str(node.qos.get("reliability", "")))
-                qos_widgets["reliability"] = reliability
-                form.addRow("reliability", reliability)
-                history = QComboBox(dialog)
-                history.addItems(["", "keep_last", "keep_all"])
-                history.setCurrentText(str(node.qos.get("history", "")))
-                qos_widgets["history"] = history
-                form.addRow("history", history)
-                depth = QLineEdit(str(node.qos.get("depth", "")), dialog)
-                qos_widgets["depth"] = depth
-                form.addRow("depth", depth)
+                pass
             layout.addLayout(form)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
         buttons.accepted.connect(dialog.accept)
@@ -1257,22 +1310,100 @@ class PipelineEditor(Plugin):
                         "queue_size": self._parse_typed_scalar(self._qos_widget_text(sync_widgets["queue_size"]), 10),
                         "slop": self._parse_typed_scalar(self._qos_widget_text(sync_widgets["slop"]), 0.05),
                     }
+                node.inputs = self._collect_port_qos(node.inputs, input_qos_widgets)
+                node.outputs = self._collect_port_qos(node.outputs, output_qos_widgets)
             elif topic_edit is not None:
                 if not self._rename_node(node, topic_edit.text().strip()):
                     return
                 node.topic = node.id
-                if node.type == "topic":
-                    node.qos = {
-                        key: self._qos_widget_value(widget)
-                        for key, widget in qos_widgets.items()
-                        if self._qos_widget_text(widget).strip()
-                    }
             self._redraw_node(item)
+            self._sync_live_pipeline()
 
     def _readonly_field(self, text: str) -> QLineEdit:
         field = QLineEdit(text, self.widget)
         field.setReadOnly(True)
         return field
+
+    def _ensure_filter_port_configs(self, node: Node) -> None:
+        for port, config in self._default_port_configs(node.input_type, False).items():
+            node.inputs.setdefault(port, config)
+            node.inputs[port].setdefault("qos", self._default_qos())
+        for port, config in self._default_port_configs(node.output_type, True).items():
+            node.outputs.setdefault(port, config)
+            node.outputs[port].setdefault("qos", self._default_qos())
+
+    def _add_port_tab(
+        self,
+        tabs: QTabWidget,
+        dialog: QDialog,
+        node: Node,
+        outgoing: bool,
+    ) -> dict[str, dict[str, QLineEdit | QComboBox]]:
+        page = QWidget(dialog)
+        form = QFormLayout(page)
+        configs = node.outputs if outgoing else node.inputs
+        widgets: dict[str, dict[str, QLineEdit | QComboBox]] = {}
+        for port, stream_type, _label in self._port_options(node, outgoing):
+            topic = self._connected_topic(node, port, outgoing)
+            form.addRow(f"{port} type", self._readonly_field(stream_type or "unknown"))
+            form.addRow(f"{port} topic", self._readonly_field(topic or "unconnected"))
+            qos = dict(self._default_qos())
+            qos.update((configs.get(port, {}) or {}).get("qos", {}) or {})
+            port_widgets: dict[str, QLineEdit | QComboBox] = {}
+            reliability = QComboBox(dialog)
+            reliability.addItems(["best_effort", "reliable"])
+            reliability.setCurrentText(str(qos.get("reliability", "best_effort")))
+            port_widgets["reliability"] = reliability
+            form.addRow(f"{port} reliability", reliability)
+            history = QComboBox(dialog)
+            history.addItems(["keep_last", "keep_all"])
+            history.setCurrentText(str(qos.get("history", "keep_last")))
+            port_widgets["history"] = history
+            form.addRow(f"{port} history", history)
+            depth = QLineEdit(str(qos.get("depth", 5)), dialog)
+            port_widgets["depth"] = depth
+            form.addRow(f"{port} depth", depth)
+            durability = QComboBox(dialog)
+            durability.addItems(["volatile", "transient_local"])
+            durability.setCurrentText(str(qos.get("durability", "volatile")))
+            port_widgets["durability"] = durability
+            form.addRow(f"{port} durability", durability)
+            widgets[port] = port_widgets
+        tabs.addTab(page, "Output" if outgoing else "Input")
+        return widgets
+
+    def _connected_topic(self, node: Node, port: str, outgoing: bool) -> str:
+        for edge in self.graph.edges:
+            if outgoing and edge.source.node == node.id and self._canonical_output_port(node, edge.source.port) == port:
+                target = self.items_by_id.get(edge.target.node)
+                if target is not None and target.node.type == "topic":
+                    return target.node.topic
+                return edge.topic
+            if not outgoing and edge.target.node == node.id and self._canonical_input_port(node, edge.target.port) == port:
+                source = self.items_by_id.get(edge.source.node)
+                if source is not None and source.node.type == "topic":
+                    return source.node.topic
+                return edge.topic
+        return ""
+
+    def _collect_port_qos(
+        self,
+        current: dict[str, object],
+        widgets: dict[str, dict[str, QLineEdit | QComboBox]],
+    ) -> dict[str, object]:
+        collected: dict[str, object] = {}
+        for port, port_widgets in widgets.items():
+            collected[port] = {
+                "qos": {
+                    "reliability": self._qos_widget_text(port_widgets["reliability"]),
+                    "history": self._qos_widget_text(port_widgets["history"]),
+                    "depth": self._parse_typed_scalar(self._qos_widget_text(port_widgets["depth"]), 5),
+                    "durability": self._qos_widget_text(port_widgets["durability"]),
+                }
+            }
+        for port, config in current.items():
+            collected.setdefault(port, config)
+        return collected
 
     def _port_summary(self, values: list[str]) -> str:
         ports: list[str] = []
@@ -1321,9 +1452,6 @@ class PipelineEditor(Plugin):
             return widget.currentText()
         return widget.text()
 
-    def _qos_widget_value(self, widget: QLineEdit | QComboBox):
-        return self._parse_scalar(self._qos_widget_text(widget))
-
     def _parse_typed_scalar(self, text: str, current):
         if isinstance(current, bool):
             return text.strip().lower() in {"1", "true", "yes", "on"}
@@ -1352,13 +1480,66 @@ class PipelineEditor(Plugin):
         if node.type == "topic":
             data["topic"] = node.topic
             data["topic_type"] = node.output_type or node.input_type
-            data["qos"] = node.qos
             return data
         data["package"] = node.package
         data["filter"] = node.filter
         data["parameters"] = node.parameters
         data["sync"] = node.sync
         return data
+
+    def _sync_live_pipeline(self) -> None:
+        try:
+            missing = self._missing_filter_ports()
+            if missing:
+                self.live_runtime.sync({})
+                self.status.setText("Live pipeline stopped until all filter ports are connected.")
+                self.last_live_runtime_error = ""
+                return
+            self.graph.validate()
+            desired = self._live_component_specs()
+            self.live_runtime.sync(desired)
+            if desired:
+                self.status.setText(f"Live pipeline running with {len(desired)} component(s).")
+            self.last_live_runtime_error = ""
+        except Exception as error:
+            message = str(error)
+            self.status.setText(f"Live pipeline error: {message}")
+            if message != self.last_live_runtime_error:
+                self.last_live_runtime_error = message
+                QMessageBox.critical(self.widget, "Live Pipeline Error", message)
+
+    def _live_component_specs(self) -> dict[str, dict[str, object]]:
+        specs: dict[str, dict[str, object]] = {}
+        for node in self.graph.nodes:
+            if node.type != "filter":
+                continue
+            self._ensure_filter_port_configs(node)
+            specs[node.id] = {
+                "package": node.package,
+                "component_class": node.component_class or f"{node.package}::{node.filter}Component",
+                "parameters": self._live_parameters_for_node(node),
+            }
+        return specs
+
+    def _live_parameters_for_node(self, node: Node) -> dict[str, object]:
+        parameters = dict(node.parameters)
+        for port, _stream_type, _label in self._port_options(node, False):
+            topic = self._connected_topic(node, port, False)
+            if topic:
+                parameters[f"inputs.{port}.topic"] = topic
+            qos = (node.inputs.get(port, {}) or {}).get("qos", {}) or {}
+            for key, value in qos.items():
+                parameters[f"inputs.{port}.qos.{key}"] = value
+        for port, _stream_type, _label in self._port_options(node, True):
+            topic = self._connected_topic(node, port, True)
+            if topic:
+                parameters[f"outputs.{port}.topic"] = topic
+            qos = (node.outputs.get(port, {}) or {}).get("qos", {}) or {}
+            for key, value in qos.items():
+                parameters[f"outputs.{port}.qos.{key}"] = value
+        for key, value in node.sync.items():
+            parameters[f"sync.{key}"] = value
+        return parameters
 
     def _redraw_node(self, item: NodeItem) -> None:
         node = item.node
@@ -1375,8 +1556,33 @@ class PipelineEditor(Plugin):
             item.node.position = {"x": float(item.pos().x()), "y": float(item.pos().y())}
         self.graph.editor = {"orientation": "top_down" if self.top_down_mode else "left_right"}
 
+    def _missing_filter_ports(self) -> list[str]:
+        missing: list[str] = []
+        for node in self.graph.nodes:
+            if node.type != "filter":
+                continue
+            connected_inputs = self._occupied_input_ports(node)
+            for port, _stream_type, _label in self._port_options(node, False):
+                if port not in connected_inputs:
+                    missing.append(f"{node.id}:{port} input")
+            connected_outputs = self._occupied_output_ports(node)
+            for port, _stream_type, _label in self._port_options(node, True):
+                if port not in connected_outputs:
+                    missing.append(f"{node.id}:{port} output")
+        return missing
+
     def _save(self) -> None:
         self._sync_positions()
+        missing = self._missing_filter_ports()
+        if missing:
+            QMessageBox.warning(
+                self.widget,
+                "Unconnected Ports",
+                "The following filter ports are unconnected:\n"
+                + "\n".join(missing)
+                + "\n\nYou can double-click the white sphere until it is gone.",
+            )
+            return
         path, _ = QFileDialog.getSaveFileName(self.widget, "Save Pipeline", "", "YAML (*.yaml *.yml)")
         if path:
             if not path.endswith((".yaml", ".yml")):
@@ -1406,6 +1612,7 @@ class PipelineEditor(Plugin):
             self.items_by_id[node.id] = item
             self.expand_scene_for_item(item)
         self._rebuild_edges()
+        self._sync_live_pipeline()
 
     def _rebuild_edges(self) -> None:
         for item in self.edge_items:

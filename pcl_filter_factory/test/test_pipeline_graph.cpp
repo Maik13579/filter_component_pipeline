@@ -37,6 +37,12 @@ nodes:
     output_type: PointXYZI,PointIndices
     parameters:
       filter.leaf_size_x: 0.1
+    inputs:
+      cloud:
+        qos: {reliability: reliable, history: keep_last, depth: 8, durability: volatile}
+    outputs:
+      cloud:
+        qos: {durability: transient_local}
     sync:
       policy: ExactTime
   - type: topic
@@ -67,10 +73,12 @@ edges:
   EXPECT_EQ(graph.nodes[1].input_type, "PointXYZI");
   EXPECT_EQ(graph.nodes[1].output_type, "PointXYZI,PointIndices");
   EXPECT_EQ(graph.nodes[1].parameters.at("filter.leaf_size_x"), "0.1");
+  EXPECT_EQ(graph.nodes[1].inputs.at("cloud").at("depth"), "8");
+  EXPECT_EQ(graph.nodes[1].inputs.at("cloud").at("reliability"), "reliable");
+  EXPECT_EQ(graph.nodes[1].outputs.at("cloud").at("durability"), "transient_local");
   EXPECT_EQ(graph.nodes[1].sync.at("policy"), "ExactTime");
   EXPECT_EQ(graph.nodes[3].topic, "/pcl_pipeline/voxel_to_output");
-  EXPECT_EQ(graph.nodes[3].qos.at("depth"), "7");
-  EXPECT_EQ(graph.nodes[3].qos.at("reliability"), "reliable");
+  EXPECT_TRUE(graph.nodes[3].qos.empty());
   EXPECT_DOUBLE_EQ(graph.nodes[3].x, 120.0);
   EXPECT_DOUBLE_EQ(graph.nodes[3].y, 80.0);
   ASSERT_EQ(graph.edges.size(), 3U);

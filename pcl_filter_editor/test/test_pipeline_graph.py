@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pcl_filter_editor.pipeline_graph import Edge, Graph, Node, PortRef, load_graph, save_graph
+from pcl_filter_editor.pipeline_graph import Edge, Graph, Node, PortRef, graph_from_dict, load_graph, save_graph
 
 
 def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
@@ -30,6 +30,8 @@ def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
                 input_type="PointXYZI",
                 output_type="PointXYZI,PointIndices",
                 parameters={"filter.leaf_size_x": 0.1},
+                inputs={"cloud": {"qos": {"reliability": "reliable", "history": "keep_last", "depth": 8}}},
+                outputs={"cloud": {"qos": {"durability": "transient_local"}}},
                 sync={"policy": "ExactTime"},
             ),
             Node(
@@ -57,18 +59,52 @@ def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
     assert "id: /points" not in path.read_text(encoding="utf-8")
     assert "id: /filtered" not in path.read_text(encoding="utf-8")
     assert "name: VoxelGridXYZI_1" in path.read_text(encoding="utf-8")
+    assert "inputs:" in path.read_text(encoding="utf-8")
+    assert "outputs:" in path.read_text(encoding="utf-8")
+    assert "transient_local" in path.read_text(encoding="utf-8")
+    assert "qos:\n      depth: 7" not in path.read_text(encoding="utf-8")
     loaded = load_graph(str(path))
 
     assert loaded.nodes[1].input_type == "PointXYZI"
     assert loaded.nodes[1].output_type == "PointXYZI,PointIndices"
     assert loaded.nodes[1].parameters["filter.leaf_size_x"] == 0.1
+    assert loaded.nodes[1].inputs["cloud"]["qos"]["depth"] == 8
+    assert loaded.nodes[1].outputs["cloud"]["qos"]["durability"] == "transient_local"
     assert loaded.nodes[1].sync["policy"] == "ExactTime"
     assert loaded.nodes[0].position == {"x": 10.0, "y": 20.0}
     assert loaded.editor == {"orientation": "top_down"}
     assert loaded.nodes[2].topic == "/pcl_pipeline/voxel_to_output"
-    assert loaded.nodes[2].qos == {"depth": 7, "reliability": "reliable"}
+    assert loaded.nodes[2].qos == {}
     assert loaded.nodes[2].position == {"x": 120.0, "y": 80.0}
     assert len(loaded.edges) == 3
+
+
+def test_graph_load_ignores_old_edge_qos() -> None:
+    loaded = graph_from_dict(
+        {
+            "version": 1,
+            "nodes": [
+                {"type": "topic", "topic": "/a", "input_type": "PointXYZI", "output_type": "PointXYZI"},
+                {
+                    "type": "filter",
+                    "name": "VoxelGridXYZI_1",
+                    "package": "pcl_filter_xyzi",
+                    "filter": "VoxelGridXYZI",
+                    "input_type": "PointXYZI",
+                    "output_type": "PointXYZI",
+                },
+            ],
+            "edges": [
+                {
+                    "from": {"node": "/a", "port": "out"},
+                    "to": {"node": "VoxelGridXYZI_1", "port": "in"},
+                    "qos": {"reliability": "reliable"},
+                }
+            ],
+        }
+    )
+
+    assert loaded.edges[0].qos == {}
 
 
 def test_graph_rejects_incompatible_custom_types() -> None:
@@ -208,4 +244,3 @@ def test_graph_rejects_duplicate_topic_nodes() -> None:
 
     with pytest.raises(ValueError):
         graph.validate()
-

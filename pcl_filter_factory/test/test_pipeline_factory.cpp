@@ -81,8 +81,6 @@ nodes:
     filter: PointCloudMergerXYZI
     input_type: PointXYZI,PointXYZI
     output_type: PointXYZI
-    parameters:
-      queue_size: 5
   - type: topic
     topic: /points/merged
     input_type: PointXYZI
@@ -158,7 +156,7 @@ TEST(PipelineFactoryNode, LoadsInstalledExamplePipeline)
   EXPECT_EQ(graph.nodes[1].id, "VoxelGridXYZI_1");
   EXPECT_EQ(graph.nodes[2].type, "topic");
   EXPECT_EQ(graph.nodes[2].id, "/pcl_pipeline/voxel_filtered");
-  EXPECT_EQ(graph.nodes[2].qos.at("depth"), "5");
+  EXPECT_TRUE(graph.nodes[2].qos.empty());
 
   expectFactoryLoadsPipeline(pipeline_file);
 }

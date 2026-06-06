@@ -55,6 +55,24 @@ std::map<std::string, std::string> stringMap(const YAML::Node & node)
   return values;
 }
 
+std::map<std::string, std::map<std::string, std::string>> portConfigMap(const YAML::Node & node)
+{
+  std::map<std::string, std::map<std::string, std::string>> values;
+  if (!node) {
+    return values;
+  }
+  if (!node.IsMap()) {
+    throw std::runtime_error("Expected a port configuration mapping");
+  }
+  for (const auto & entry : node) {
+    const auto port_name = entry.first.as<std::string>();
+    const auto qos = entry.second["qos"] ? stringMap(entry.second["qos"]) :
+      std::map<std::string, std::string>{};
+    values.emplace(port_name, qos);
+  }
+  return values;
+}
+
 PipelinePort parsePort(const YAML::Node & node)
 {
   if (!node || !node.IsMap()) {
@@ -95,11 +113,7 @@ std::string portNameForType(
     return "indices";
   }
   if (stream_type.rfind("Point", 0) == 0) {
-    auto name = stream_type.substr(5);
-    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char value) {
-        return static_cast<char>(std::tolower(value));
-      });
-    return name.empty() ? "out" : name;
+    return "cloud";
   }
   auto name = stream_type;
   std::replace(name.begin(), name.end(), '/', '_');
@@ -198,7 +212,9 @@ PipelineGraph loadPipelineGraph(const std::string & path)
       node.id = node.topic;
     }
     node.parameters = stringMap(item["parameters"]);
-    node.qos = stringMap(item["qos"]);
+    node.qos = {};
+    node.inputs = portConfigMap(item["inputs"]);
+    node.outputs = portConfigMap(item["outputs"]);
     node.sync = stringMap(item["sync"]);
     if (item["position"] && item["position"].IsMap()) {
       node.x = item["position"]["x"] ? item["position"]["x"].as<double>() : 0.0;
@@ -215,7 +231,7 @@ PipelineGraph loadPipelineGraph(const std::string & path)
     edge.from = parsePort(item["from"]);
     edge.to = parsePort(item["to"]);
     edge.topic = optionalString(item, "topic");
-    edge.qos = stringMap(item["qos"]);
+    edge.qos = {};
     if (item["position"] && item["position"].IsMap()) {
       edge.x = item["position"]["x"] ? item["position"]["x"].as<double>() : 0.0;
       edge.y = item["position"]["y"] ? item["position"]["y"].as<double>() : 0.0;

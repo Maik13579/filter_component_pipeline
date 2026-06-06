@@ -4,6 +4,7 @@
 #include "pcl_filter_factory/pipeline/pipeline_factory_node.hpp"
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -101,6 +102,19 @@ std::string inputParameterName(const std::string & port)
 std::string outputParameterName(const std::string & port)
 {
   return "outputs." + normalizedOutputPort(port) + ".topic";
+}
+
+void appendPortQosParameters(
+  std::vector<rclcpp::Parameter> & parameters,
+  const std::string & direction,
+  const std::map<std::string, std::map<std::string, std::string>> & ports)
+{
+  for (const auto & [port, qos] : ports) {
+    const auto normalized_port = direction == "inputs" ? normalizedInputPort(port) : normalizedOutputPort(port);
+    for (const auto & [name, value] : qos) {
+      parameters.push_back(parameterFromString(direction + "." + normalized_port + ".qos." + name, value));
+    }
+  }
 }
 
 }  // namespace
@@ -265,6 +279,9 @@ std::vector<rclcpp::Parameter> PipelineFactoryNode::parametersForNode(const Pipe
       parameters.push_back(rclcpp::Parameter{outputParameterName(port), topic});
     }
   }
+
+  appendPortQosParameters(parameters, "inputs", node.inputs);
+  appendPortQosParameters(parameters, "outputs", node.outputs);
 
   for (const auto & [name, value] : node.sync) {
     parameters.push_back(parameterFromString("sync." + name, value));
