@@ -718,12 +718,14 @@ class PipelineEditor(Plugin):
         if export is None:
             QMessageBox.warning(self.widget, "No Filter", "Select a filter first.")
             return
+        name = self._prompt_new_filter_name(export.filter)
+        if not name:
+            return
         try:
             metadata = self._component_parameter_metadata(export)
         except Exception as error:
             QMessageBox.critical(self.widget, "Parameter Discovery Failed", str(error))
             return
-        name = self._new_id(export.filter)
         x = len(self.graph.nodes) * 34.0
         y = len(self.graph.nodes) * 18.0
         self._add_node(
@@ -743,6 +745,20 @@ class PipelineEditor(Plugin):
                 position={"x": x, "y": y},
             )
         )
+
+    def _prompt_new_filter_name(self, default_name: str) -> str:
+        while True:
+            name, ok = QInputDialog.getText(self.widget, "Filter Name", "Name", text=default_name)
+            if not ok:
+                return ""
+            name = name.strip()
+            if not name:
+                QMessageBox.critical(self.widget, "Invalid Name", "Name must not be empty.")
+                continue
+            if name in self.items_by_id:
+                QMessageBox.critical(self.widget, "Duplicate Node", f"Node {name} already exists.")
+                continue
+            return name
 
     def _default_qos(self) -> dict[str, object]:
         return {
