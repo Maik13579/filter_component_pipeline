@@ -1,31 +1,62 @@
 # pcl_filter_base
 
-`pcl_filter_base` contains reusable header-only ROS 2 infrastructure for PCL
-filter components:
+`pcl_filter_base` contains the reusable lifecycle component infrastructure for
+PCL filter components. It is header-only and uses the
+`pcl_filter_base::ros` namespace.
 
-- lifecycle filter base class
-- parameter descriptor helpers
+The central idea is that a component declares port descriptors. Those
+descriptors are the source of the component's subscriptions, publishers, topic
+parameters, QoS parameters, and synchronization behavior.
 
-Headers use the `pcl_filter_base/...` include root and the
-`pcl_filter_base::ros` namespace. Concrete filters and registered components live
-in `pcl_filter_components`.
+## Port Descriptors
 
-Filter components declare input and output port descriptors. The base class
-creates subscriptions, publishers, and synchronization state from those
-descriptors during lifecycle configuration. Topic parameters use
-`inputs.<port>.topic` and `outputs.<port>.topic`.
+Each input or output descriptor has a port name, a default topic, an adapter
+type, and help text. During lifecycle configuration, the base class uses input
+descriptors to declare parameters such as `inputs.cloud.topic` and
+`inputs.cloud.qos.reliability`, then creates the matching typed subscriptions.
+It uses output descriptors in the same way for parameters such as
+`outputs.cloud.topic` and `outputs.cloud.qos.depth`, then creates typed
+publishers.
 
-Derived components consume synchronized messages through typed accessors such as
-`takeInput<AdapterT>("cloud")` and publish through
-`publish<AdapterT>("cloud", message)`. Multi-input components additionally
-declare `sync.policy`, `sync.queue_size`, and `sync.slop`.
+Derived components receive data by named port:
 
-## Creating a custom component
+```cpp
+auto cloud = takeInput<CloudAdapter>("cloud");
+```
 
-Custom components derive from `PclFilterComponentBase<PointT, FilterT>` and pass
-compile-time input and output descriptor arrays into the base constructor. The
-base uses those descriptors to declare topic parameters and create the typed ROS
-subscriptions and publishers.
+They publish results through named output ports:
+
+```cpp
+publish<CloudAdapter>("cloud", filtered_cloud);
+```
+
+The port name in code is the same port name that appears in editor edges and
+saved YAML.
+
+## Synchronization
+
+Components with one input port process each incoming message independently.
+Components with more than one input port get synchronization parameters:
+
+- `sync.policy`: `ExactTime` or `ApproximateTime`.
+- `sync.queue_size`: how many unmatched messages to retain per input port.
+- `sync.slop`: timestamp tolerance for approximate matching.
+
+These parameters exist only for multi-input components. A complete synchronized
+input set is then available through the same `takeInput<AdapterT>("port")`
+accessors used by single-input components.
+
+## Creating a Custom Component
+
+Custom components derive from `PclFilterComponentBase<PointT, FilterT>` and
+pass compile-time input and output descriptor arrays into the base constructor.
+The constructor call names the component and gives the base enough information
+to declare port topics, QoS parameters, publishers, subscriptions, and optional
+sync parameters.
+
+`inputPorts()` declares what the component consumes. `outputPorts()` declares
+what it can publish. `configureFilter()` reads filter-specific parameters and
+configures the wrapped PCL filter object before the component processes data.
 
 ```cpp
 template <typename PointT>
@@ -71,11 +102,8 @@ protected:
 };
 ```
 
-For multiple inputs, add more entries to `inputPorts()`. The constructor declares
-`sync.policy`, `sync.queue_size`, and `sync.slop` automatically when the input
-descriptor array has more than one entry. The synchronized input set is then
-available through `takeInput<AdapterT>("port_name")`.
-
-Outputs are also descriptor-driven. A component that can publish different
-message types declares each output with its own adapter type and publishes to the
-matching named port with `publish<AdapterT>("port_name", message)`.
+For multiple inputs, add more entries to `inputPorts()`. The base declares sync
+parameters automatically when the input descriptor array has more than one
+entry. For multiple outputs, declare each output with the adapter type that
+matches the message it publishes, such as a cloud adapter for `cloud` and a
+point-indices adapter for `indices`.

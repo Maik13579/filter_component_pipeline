@@ -1,7 +1,9 @@
 # pcl_filter_xyzrgb
 
-`pcl_filter_xyzrgb` registers the `pcl::PointXYZRGB` instantiations of
-the reusable component templates from `pcl_filter_components`.
+`pcl_filter_xyzrgb` instantiates the reusable filters from
+`pcl_filter_components` for the concrete `pcl::PointXYZRGB` point type. It
+exports the `PointXYZRGB` logical cloud type, editor discovery metadata, and the
+loadable component classes for the `PointXYZRGB` filter set.
 
 Registered classes:
 
@@ -10,8 +12,11 @@ Registered classes:
 - `pcl_filter_xyzrgb::CropBoxXYZRGBComponent`
 - `pcl_filter_xyzrgb::PointCloudMergerXYZRGBComponent`
 
-This package owns the `PointXYZRGB` filter discovery exports and the loadable
-component shared library. Runtime graphs should use:
+The filters in this package have the same conceptual ports and parameters as the
+other concrete point-type packages. Single-cloud filters use `cloud` input,
+`cloud` output, and optional `indices` output; `PointCloudMergerXYZRGB` uses
+`input_1`, `input_2`, and `cloud`. Saved graph filter nodes identify this
+package and one registered component class:
 
 ```yaml
 package: pcl_filter_xyzrgb

@@ -1,18 +1,48 @@
 # pcl_filter_factory
 
-`pcl_filter_factory` parses saved YAML pipeline graphs and loads the requested
-filter components into one process with intra-process communication enabled.
+`pcl_filter_factory` interprets saved YAML pipeline graphs. It turns filter
+nodes into loaded ROS 2 lifecycle components and turns topic nodes into topic
+bindings for the connected component ports.
 
-The `executor_threads` parameter selects single-threaded or multi-threaded
-execution. Topic nodes in YAML become input, output, and intermediate topic
-bindings. Filter nodes are loaded through `rclcpp_components`, then configured
-and activated through their lifecycle interface.
+Saved YAML contains two kinds of nodes:
 
-Incoming edges are mapped to `inputs.<target_port>.topic` parameters and
-outgoing edges are mapped to `outputs.<source_port>.topic` parameters. Legacy
-graph ports `in` and `out` are normalized to the `cloud` port. A filter node's
-YAML `sync` map is passed through as `sync.*` parameters for components that
-declare multiple inputs.
+- Filter nodes: component identity, filter parameters, port QoS, optional sync
+  settings, and editor layout.
+- Topic nodes: named ROS topic endpoints or intermediate graph bindings.
+
+Only filter nodes are loaded with `rclcpp_components`. Topic nodes are graph
+structure; they provide the concrete topic names assigned to component ports.
+
+## Edge Mapping
+
+Edges describe how named ports are connected. For each incoming edge to a filter
+node, the factory writes an `inputs.<port>.topic` parameter. For each outgoing
+edge from a filter node, it writes an `outputs.<port>.topic` parameter.
+
+For example:
+
+```yaml
+edges:
+  - from: {node: /points/input, port: out}
+    to: {node: VoxelGridXYZI_1, port: cloud}
+  - from: {node: VoxelGridXYZI_1, port: cloud}
+    to: {node: /points/output, port: in}
+```
+
+maps to these component parameters on `VoxelGridXYZI_1`:
+
+```yaml
+inputs.cloud.topic: /points/input
+outputs.cloud.topic: /points/output
+```
+
+The saved graph may also contain per-port QoS maps and a filter node `sync` map.
+The factory passes sync entries through as `sync.policy`, `sync.queue_size`, and
+`sync.slop` parameters for components that declare more than one input port.
+
+Legacy graph ports named `in` and `out` are normalized to the modern `cloud`
+port for filter components. Topic-node ports such as `in` and `out` remain graph
+endpoint labels.
 
 Factory headers use the `pcl_filter_factory/...` include root and the
 `pcl_filter_factory::pipeline` namespace.
