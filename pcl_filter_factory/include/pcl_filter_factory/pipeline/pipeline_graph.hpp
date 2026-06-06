@@ -37,6 +37,8 @@ struct PipelineNode
   std::string component_class;
   std::string input_type;
   std::string output_type;
+  std::string input_ports;
+  std::string output_ports;
   std::string topic;
   std::map<std::string, std::string> parameters;
   std::map<std::string, std::string> qos;

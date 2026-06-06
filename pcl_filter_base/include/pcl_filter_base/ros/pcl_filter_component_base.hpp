@@ -371,6 +371,11 @@ protected:
     publish<CloudAdapter>("cloud", std::move(output));
   }
 
+  void publishCloud(const std::string & output_port, std::unique_ptr<StampedCloud> output)
+  {
+    publish<CloudAdapter>(output_port, std::move(output));
+  }
+
   void publishIndices(std::unique_ptr<pcl::PointIndices> output)
   {
     publish<IndicesAdapter>("indices", std::move(output));
@@ -412,12 +417,12 @@ protected:
     }
   }
 
-  void publishFilterIndices(const std::string & output_port, std::unique_ptr<StampedCloud> input)
+  void publishFilterIndices(const std::string & output_port, const StampedCloud & input)
   {
     if constexpr (detail::HasFilterIndices<FilterT, StampedCloud>::value) {
       auto output = std::make_unique<pcl::PointIndices>();
-      output->header = input->header;
-      filter_.filterIndices(*input, output->indices);
+      output->header = input.header;
+      filter_.filterIndices(input, output->indices);
       publish<IndicesAdapter>(output_port, std::move(output));
     } else {
       throw std::runtime_error("The selected filter does not support point-indices output");

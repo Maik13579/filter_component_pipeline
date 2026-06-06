@@ -122,6 +122,32 @@ std::vector<std::string> splitTypes(const std::string & value)
   return types;
 }
 
+std::vector<std::pair<std::string, std::string>> splitPorts(const std::string & value)
+{
+  std::vector<std::pair<std::string, std::string>> ports;
+  for (const auto & item : splitTypes(value)) {
+    const auto separator = item.find(':');
+    if (separator == std::string::npos) {
+      ports.push_back({"", item});
+      continue;
+    }
+    auto name = item.substr(0, separator);
+    auto stream_type = item.substr(separator + 1U);
+    const auto name_first = name.find_first_not_of(" \t\n\r");
+    const auto name_last = name.find_last_not_of(" \t\n\r");
+    name = name_first == std::string::npos ? std::string{} :
+      name.substr(name_first, name_last - name_first + 1U);
+    const auto type_first = stream_type.find_first_not_of(" \t\n\r");
+    const auto type_last = stream_type.find_last_not_of(" \t\n\r");
+    stream_type = type_first == std::string::npos ? std::string{} :
+      stream_type.substr(type_first, type_last - type_first + 1U);
+    if (!stream_type.empty()) {
+      ports.push_back({name, stream_type});
+    }
+  }
+  return ports;
+}
+
 std::string portNameForType(
   const std::string & stream_type,
   size_t index,
@@ -148,10 +174,14 @@ std::string portNameForType(
 
 std::vector<std::string> portsForType(const std::string & value, bool outgoing)
 {
-  const auto types = splitTypes(value);
+  const auto ports_with_types = splitPorts(value);
   auto ports = std::vector<std::string>{};
-  for (size_t index = 0; index < types.size(); ++index) {
-    ports.push_back(portNameForType(types[index], index, types.size(), outgoing));
+  for (size_t index = 0; index < ports_with_types.size(); ++index) {
+    const auto & port_name = ports_with_types[index].first;
+    const auto & stream_type = ports_with_types[index].second;
+    ports.push_back(port_name.empty() ?
+      portNameForType(stream_type, index, ports_with_types.size(), outgoing) :
+      port_name);
   }
   return ports;
 }
@@ -352,7 +382,7 @@ std::vector<rclcpp::Parameter> PipelineFactoryNode::parametersForNode(const Pipe
           topic});
     }
   }
-  for (const auto & port : portsForType(node.input_type, false)) {
+  for (const auto & port : portsForType(node.input_ports.empty() ? node.input_type : node.input_ports, false)) {
     const auto existing = std::find_if(
       inbound_topics.begin(),
       inbound_topics.end(),
@@ -376,7 +406,7 @@ std::vector<rclcpp::Parameter> PipelineFactoryNode::parametersForNode(const Pipe
       parameters.push_back(rclcpp::Parameter{outputParameterName(port), topic});
     }
   }
-  for (const auto & port : portsForType(node.output_type, true)) {
+  for (const auto & port : portsForType(node.output_ports.empty() ? node.output_type : node.output_ports, true)) {
     const auto existing = std::find_if(
       outbound_topics.begin(),
       outbound_topics.end(),

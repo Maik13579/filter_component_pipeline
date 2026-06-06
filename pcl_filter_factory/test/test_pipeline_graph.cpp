@@ -229,6 +229,39 @@ edges:
     std::runtime_error);
 }
 
+TEST(PipelineGraph, AcceptsExplicitRepeatedOutputPorts)
+{
+  const auto path = writeTempPipeline(R"(
+version: 1
+nodes:
+  - type: filter
+    name: VoxelGridXYZI_1
+    package: pcl_filter_xyzi
+    filter: VoxelGridXYZI
+    input_type: PointXYZI
+    output_type: PointXYZI,PointIndices,PointXYZI
+    output_ports: cloud:PointXYZI,indices:PointIndices,orig_cloud:PointXYZI
+  - type: topic
+    topic: /filtered
+    input_type: PointXYZI
+    output_type: PointXYZI
+  - type: topic
+    topic: /original
+    input_type: PointXYZI
+    output_type: PointXYZI
+edges:
+  - from: {node: VoxelGridXYZI_1, port: cloud}
+    to: {node: /filtered, port: in}
+  - from: {node: VoxelGridXYZI_1, port: orig_cloud}
+    to: {node: /original, port: in}
+)");
+
+  const auto graph = pcl_filter_factory::pipeline::loadPipelineGraph(path);
+
+  ASSERT_EQ(graph.edges.size(), 2U);
+  EXPECT_EQ(graph.nodes[0].output_ports, "cloud:PointXYZI,indices:PointIndices,orig_cloud:PointXYZI");
+}
+
 TEST(PipelineGraph, RejectsDuplicateTopicNodes)
 {
   const auto path = writeTempPipeline(R"(

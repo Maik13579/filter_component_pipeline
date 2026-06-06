@@ -738,10 +738,12 @@ class PipelineEditor(Plugin):
                 component_class=export.component_class,
                 input_type=export.input_type,
                 output_type=export.output_type,
+                input_ports=export.input_ports,
+                output_ports=export.output_ports,
                 parameters=metadata.defaults,
-                inputs=self._default_port_configs(export.input_type, False),
-                outputs=self._default_port_configs(export.output_type, True),
-                sync=self._default_sync() if self._has_multiple_input_types(export.input_type) else {},
+                inputs=self._default_port_configs(export.input_ports or export.input_type, False),
+                outputs=self._default_port_configs(export.output_ports or export.output_type, True),
+                sync=self._default_sync() if self._has_multiple_input_types(export.input_ports or export.input_type) else {},
                 position={"x": x, "y": y},
             )
         )
@@ -797,6 +799,8 @@ class PipelineEditor(Plugin):
             component_class=node.component_class,
             input_type=node.input_type,
             output_type=node.output_type,
+            input_ports=node.input_ports,
+            output_ports=node.output_ports,
         )
         metadata = self._component_parameter_metadata(export)
         node.parameters = {
@@ -825,7 +829,11 @@ class PipelineEditor(Plugin):
     def _edge_type(self, node: Node, outgoing: bool, port: str = "") -> str:
         if node.type == "topic":
             return self._type_for_port(node.output_type or node.input_type, port, outgoing)
-        return self._type_for_port(node.output_type if outgoing else node.input_type, port, outgoing)
+        return self._type_for_port(
+            (node.output_ports or node.output_type) if outgoing else (node.input_ports or node.input_type),
+            port,
+            outgoing,
+        )
 
     def _connection_compatibility(self, source_type: str, target_type: str) -> str:
         if not source_type or not target_type or source_type == target_type:
@@ -845,6 +853,16 @@ class PipelineEditor(Plugin):
     def _stream_types(self, value: str) -> list[str]:
         return [item.strip() for item in value.replace(";", ",").split(",") if item.strip()]
 
+    def _stream_ports(self, value: str) -> list[tuple[str, str]]:
+        ports: list[tuple[str, str]] = []
+        for item in self._stream_types(value):
+            if ":" in item:
+                name, stream_type = item.split(":", 1)
+                ports.append((name.strip(), stream_type.strip()))
+            else:
+                ports.append(("", item))
+        return [(name, stream_type) for name, stream_type in ports if stream_type]
+
     def _port_name_for_type(self, stream_type: str, index: int, total: int, outgoing: bool) -> str:
         if total > 1 and not outgoing:
             return f"input_{index + 1}"
@@ -855,24 +873,28 @@ class PipelineEditor(Plugin):
         return stream_type.replace("/", "_").replace(":", "_").lower() or ("out" if outgoing else "in")
 
     def _type_for_port(self, value: str, port: str, outgoing: bool) -> str:
-        types = self._stream_types(value)
-        if not types:
+        ports = self._stream_ports(value)
+        if not ports:
             return ""
         if not port or port in {"in", "out"}:
-            return types[0]
-        for index, stream_type in enumerate(types):
-            if port in {stream_type, self._port_name_for_type(stream_type, index, len(types), outgoing)}:
+            return ports[0][1]
+        for index, (port_name, stream_type) in enumerate(ports):
+            inferred_port = self._port_name_for_type(stream_type, index, len(ports), outgoing)
+            if port in {stream_type, port_name, inferred_port}:
                 return stream_type
-        return types[0] if outgoing else ""
+        return ports[0][1] if outgoing else ""
 
     def _port_options(self, node: Node, outgoing: bool) -> list[tuple[str, str, str]]:
-        return self._port_options_for_type(node.output_type if outgoing else node.input_type, outgoing)
+        return self._port_options_for_type(
+            (node.output_ports or node.output_type) if outgoing else (node.input_ports or node.input_type),
+            outgoing,
+        )
 
     def _port_options_for_type(self, type_value: str, outgoing: bool) -> list[tuple[str, str, str]]:
-        types = self._stream_types(type_value)
+        ports = self._stream_ports(type_value)
         options: list[tuple[str, str, str]] = []
-        for index, stream_type in enumerate(types):
-            port = self._port_name_for_type(stream_type, index, len(types), outgoing)
+        for index, (port_name, stream_type) in enumerate(ports):
+            port = port_name or self._port_name_for_type(stream_type, index, len(ports), outgoing)
             label = f"{port} ({stream_type})"
             options.append((port, stream_type, label))
         return options
@@ -1489,10 +1511,10 @@ class PipelineEditor(Plugin):
             name_edit = QLineEdit(node.name or node.id, dialog)
             general_form.addRow("Name", name_edit)
             general_form.addRow("Filter", self._readonly_field(f"{node.package}/{node.filter}"))
-            general_form.addRow("Inputs", self._readonly_field(self._port_summary([node.input_type])))
+            general_form.addRow("Inputs", self._readonly_field(self._port_summary([node.input_ports or node.input_type])))
             general_form.addRow(
                 "Outputs",
-                self._readonly_field(self._port_summary([node.output_type])),
+                self._readonly_field(self._port_summary([node.output_ports or node.output_type])),
             )
             tabs.addTab(general, "General")
             parameters = QWidget(dialog)
@@ -1581,10 +1603,10 @@ class PipelineEditor(Plugin):
         return field
 
     def _ensure_filter_port_configs(self, node: Node) -> None:
-        for port, config in self._default_port_configs(node.input_type, False).items():
+        for port, config in self._default_port_configs(node.input_ports or node.input_type, False).items():
             node.inputs.setdefault(port, config)
             node.inputs[port].setdefault("qos", self._default_qos())
-        for port, config in self._default_port_configs(node.output_type, True).items():
+        for port, config in self._default_port_configs(node.output_ports or node.output_type, True).items():
             node.outputs.setdefault(port, config)
             node.outputs[port].setdefault("qos", self._default_qos())
 
@@ -1683,7 +1705,7 @@ class PipelineEditor(Plugin):
         return ", ".join(dict.fromkeys(ports)) or "unknown"
 
     def _filter_has_multiple_inputs(self, node: Node) -> bool:
-        return self._has_multiple_input_types(node.input_type)
+        return self._has_multiple_input_types(node.input_ports or node.input_type)
 
     def _has_multiple_input_types(self, input_type: str) -> bool:
         return len(self._stream_types(input_type)) > 1
@@ -1854,6 +1876,8 @@ class PipelineEditor(Plugin):
             component_class=self._component_class_for_node(node),
             input_type=node.input_type,
             output_type=node.output_type,
+            input_ports=node.input_ports,
+            output_ports=node.output_ports,
         )
         try:
             return self._component_parameter_metadata(export).defaults

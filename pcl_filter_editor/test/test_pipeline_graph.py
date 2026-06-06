@@ -340,6 +340,31 @@ def test_graph_rejects_duplicate_filter_output_port() -> None:
         graph.validate()
 
 
+def test_graph_accepts_explicit_repeated_output_ports() -> None:
+    graph = Graph(
+        nodes=[
+            Node(
+                id="VoxelGridXYZI_1",
+                name="VoxelGridXYZI_1",
+                type="filter",
+                package="pcl_filter_xyzi",
+                filter="VoxelGridXYZI",
+                input_type="PointXYZI",
+                output_type="PointXYZI,PointIndices,PointXYZI",
+                output_ports="cloud:PointXYZI,indices:PointIndices,orig_cloud:PointXYZI",
+            ),
+            Node(id="/filtered", type="topic", topic="/filtered", input_type="PointXYZI", output_type="PointXYZI"),
+            Node(id="/original", type="topic", topic="/original", input_type="PointXYZI", output_type="PointXYZI"),
+        ],
+        edges=[
+            Edge(PortRef("VoxelGridXYZI_1", "cloud"), PortRef("/filtered", "in")),
+            Edge(PortRef("VoxelGridXYZI_1", "orig_cloud"), PortRef("/original", "in")),
+        ],
+    )
+
+    graph.validate()
+
+
 def test_graph_rejects_duplicate_topic_nodes() -> None:
     graph = Graph(
         nodes=[

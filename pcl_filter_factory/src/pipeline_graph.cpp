@@ -100,6 +100,32 @@ std::vector<std::string> splitTypes(const std::string & value)
   return types;
 }
 
+std::vector<std::pair<std::string, std::string>> splitPorts(const std::string & value)
+{
+  std::vector<std::pair<std::string, std::string>> ports;
+  for (const auto & item : splitTypes(value)) {
+    const auto separator = item.find(':');
+    if (separator == std::string::npos) {
+      ports.push_back({"", item});
+      continue;
+    }
+    auto name = item.substr(0, separator);
+    auto stream_type = item.substr(separator + 1U);
+    const auto name_first = name.find_first_not_of(" \t\n\r");
+    const auto name_last = name.find_last_not_of(" \t\n\r");
+    name = name_first == std::string::npos ? std::string{} :
+      name.substr(name_first, name_last - name_first + 1U);
+    const auto type_first = stream_type.find_first_not_of(" \t\n\r");
+    const auto type_last = stream_type.find_last_not_of(" \t\n\r");
+    stream_type = type_first == std::string::npos ? std::string{} :
+      stream_type.substr(type_first, type_last - type_first + 1U);
+    if (!stream_type.empty()) {
+      ports.push_back({name, stream_type});
+    }
+  }
+  return ports;
+}
+
 std::string portNameForType(
   const std::string & stream_type,
   size_t index,
@@ -126,34 +152,44 @@ std::string portNameForType(
 
 std::string typeForPort(const std::string & value, const std::string & port, bool outgoing)
 {
-  const auto types = splitTypes(value);
-  if (types.empty()) {
+  const auto ports = splitPorts(value);
+  if (ports.empty()) {
     return {};
   }
   if (port.empty() || port == "in" || port == "out") {
-    return types.front();
+    return ports.front().second;
   }
-  for (size_t index = 0; index < types.size(); ++index) {
-    const auto & stream_type = types[index];
-    if (port == stream_type || port == portNameForType(stream_type, index, types.size(), outgoing)) {
+  for (size_t index = 0; index < ports.size(); ++index) {
+    const auto & port_name = ports[index].first;
+    const auto & stream_type = ports[index].second;
+    if (
+      port == stream_type ||
+      port == port_name ||
+      port == portNameForType(stream_type, index, ports.size(), outgoing))
+    {
       return stream_type;
     }
   }
-  return outgoing ? types.front() : std::string{};
+  return outgoing ? ports.front().second : std::string{};
 }
 
 std::string canonicalPort(const std::string & value, const std::string & port, bool outgoing)
 {
-  const auto types = splitTypes(value);
+  const auto ports = splitPorts(value);
   const auto default_port = outgoing ? std::string{"out"} : std::string{"in"};
-  if (types.empty()) {
+  if (ports.empty()) {
     return port.empty() ? default_port : port;
   }
   if (port.empty() || port == "in" || port == "out") {
-    return types.size() > 1U ? portNameForType(types.front(), 0U, types.size(), outgoing) : default_port;
+    if (!ports.front().first.empty()) {
+      return ports.front().first;
+    }
+    return ports.size() > 1U ? portNameForType(ports.front().second, 0U, ports.size(), outgoing) : default_port;
   }
-  for (size_t index = 0; index < types.size(); ++index) {
-    if (port == portNameForType(types[index], index, types.size(), outgoing)) {
+  for (size_t index = 0; index < ports.size(); ++index) {
+    const auto & port_name = ports[index].first;
+    const auto inferred_port = portNameForType(ports[index].second, index, ports.size(), outgoing);
+    if (port == (port_name.empty() ? inferred_port : port_name)) {
       return port;
     }
   }
@@ -165,7 +201,12 @@ std::string nodeTypeForEdge(const PipelineNode & node, bool outgoing, const std:
   if (node.type == "topic") {
     return typeForPort(node.output_type.empty() ? node.input_type : node.output_type, port, outgoing);
   }
-  return typeForPort(outgoing ? node.output_type : node.input_type, port, outgoing);
+  return typeForPort(
+    outgoing ?
+    (node.output_ports.empty() ? node.output_type : node.output_ports) :
+    (node.input_ports.empty() ? node.input_type : node.input_ports),
+    port,
+    outgoing);
 }
 
 }  // namespace
@@ -203,6 +244,8 @@ PipelineGraph loadPipelineGraph(const std::string & path)
     node.component_class = optionalString(item, "component_class");
     node.input_type = optionalString(item, "input_type");
     node.output_type = optionalString(item, "output_type");
+    node.input_ports = optionalString(item, "input_ports");
+    node.output_ports = optionalString(item, "output_ports");
     node.topic = optionalString(item, "topic");
     if (item["id"]) {
       node.id = requireString(item, "id");
@@ -316,7 +359,7 @@ void validatePipelineGraph(const PipelineGraph & graph)
     if (source->type == "filter") {
       const auto key = std::make_pair(
         source->id,
-        canonicalPort(source->output_type, edge.from.port, true));
+        canonicalPort(source->output_ports.empty() ? source->output_type : source->output_ports, edge.from.port, true));
       if (!used_outputs.insert(key).second) {
         throw std::runtime_error("Filter output '" + key.first + ":" + key.second + "' is already connected");
       }
@@ -324,7 +367,7 @@ void validatePipelineGraph(const PipelineGraph & graph)
     if (target->type == "filter") {
       const auto key = std::make_pair(
         target->id,
-        canonicalPort(target->input_type, edge.to.port, false));
+        canonicalPort(target->input_ports.empty() ? target->input_type : target->input_ports, edge.to.port, false));
       if (!used_inputs.insert(key).second) {
         throw std::runtime_error("Filter input '" + key.first + ":" + key.second + "' is already connected");
       }

@@ -87,7 +87,7 @@ protected:
     }};
   }
 
-  static std::array<PortDescriptor, 2> outputPorts()
+  static std::array<PortDescriptor, 3> outputPorts()
   {
     return {{
       Base::template outputPort<CloudAdapter>(
@@ -98,6 +98,10 @@ protected:
         "indices",
         "/points/indices",
         "Filtered point indices topic."),
+      Base::template outputPort<CloudAdapter>(
+        "orig_cloud",
+        "/points/original",
+        "Original input point cloud topic."),
     }};
   }
 
@@ -115,10 +119,15 @@ protected:
   void processCloud(std::unique_ptr<StampedCloud> input) override
   {
     if (output_indices_) {
-      this->publishFilterIndices("indices", std::move(input));
+      this->publishFilterIndices("indices", *input);
+      this->publishCloud("orig_cloud", std::move(input));
       return;
     }
-    Base::processCloud(std::move(input));
+    auto output = std::make_unique<StampedCloud>();
+    output->header = input->header;
+    this->filter_.filter(*input, *output);
+    this->publishCloud(std::move(output));
+    this->publishCloud("orig_cloud", std::move(input));
   }
 
   bool output_indices_{false};

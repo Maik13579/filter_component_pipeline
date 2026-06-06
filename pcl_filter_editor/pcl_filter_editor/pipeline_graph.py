@@ -49,6 +49,8 @@ class Node:
     component_class: str = ""
     input_type: str = ""
     output_type: str = ""
+    input_ports: str = ""
+    output_ports: str = ""
     topic: str = ""
     parameters: dict[str, Any] = field(default_factory=dict)
     qos: dict[str, Any] = field(default_factory=dict)
@@ -71,6 +73,8 @@ class Node:
             "component_class",
             "input_type",
             "output_type",
+            "input_ports",
+            "output_ports",
             "topic",
         ):
             value = getattr(self, key)
@@ -148,12 +152,18 @@ class Graph:
             source_node = nodes_by_id[edge.source.node]
             target_node = nodes_by_id[edge.target.node]
             if source_node.type == "filter":
-                key = (source_node.id, _canonical_port(source_node.output_type, edge.source.port, True))
+                key = (
+                    source_node.id,
+                    _canonical_port(source_node.output_ports or source_node.output_type, edge.source.port, True),
+                )
                 if key in used_outputs:
                     raise ValueError(f"filter output {source_node.id}:{key[1]} is already connected")
                 used_outputs.add(key)
             if target_node.type == "filter":
-                key = (target_node.id, _canonical_port(target_node.input_type, edge.target.port, False))
+                key = (
+                    target_node.id,
+                    _canonical_port(target_node.input_ports or target_node.input_type, edge.target.port, False),
+                )
                 if key in used_inputs:
                     raise ValueError(f"filter input {target_node.id}:{key[1]} is already connected")
                 used_inputs.add(key)
@@ -165,7 +175,11 @@ class Graph:
     def _node_type(node: Node, outgoing: bool, port: str = "") -> str:
         if node.type == "topic":
             return _type_for_port(node.output_type or node.input_type, port, outgoing)
-        return _type_for_port(node.output_type if outgoing else node.input_type, port, outgoing)
+        return _type_for_port(
+            (node.output_ports or node.output_type) if outgoing else (node.input_ports or node.input_type),
+            port,
+            outgoing,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -200,6 +214,8 @@ def graph_from_dict(data: dict[str, Any]) -> Graph:
                 component_class=item.get("component_class", ""),
                 input_type=item.get("input_type", ""),
                 output_type=item.get("output_type", ""),
+                input_ports=item.get("input_ports", ""),
+                output_ports=item.get("output_ports", ""),
                 topic=item.get("topic", ""),
                 parameters=parameters,
                 qos={},
@@ -239,6 +255,17 @@ def _split_types(value: str) -> list[str]:
     return [item.strip() for item in value.replace(";", ",").split(",") if item.strip()]
 
 
+def _split_ports(value: str) -> list[tuple[str, str]]:
+    ports: list[tuple[str, str]] = []
+    for item in _split_types(value):
+        if ":" in item:
+            name, stream_type = item.split(":", 1)
+            ports.append((name.strip(), stream_type.strip()))
+        else:
+            ports.append(("", item))
+    return [(name, stream_type) for name, stream_type in ports if stream_type]
+
+
 def _port_name_for_type(stream_type: str, index: int, total: int, outgoing: bool) -> str:
     if total > 1 and not outgoing:
         return f"input_{index + 1}"
@@ -250,26 +277,30 @@ def _port_name_for_type(stream_type: str, index: int, total: int, outgoing: bool
 
 
 def _type_for_port(value: str, port: str, outgoing: bool) -> str:
-    types = _split_types(value)
-    if not types:
+    ports = _split_ports(value)
+    if not ports:
         return ""
     if not port or port in {"in", "out"}:
-        return types[0]
-    for index, stream_type in enumerate(types):
-        if port == stream_type or port == _port_name_for_type(stream_type, index, len(types), outgoing):
+        return ports[0][1]
+    for index, (port_name, stream_type) in enumerate(ports):
+        inferred_port = _port_name_for_type(stream_type, index, len(ports), outgoing)
+        if port == stream_type or port == port_name or port == inferred_port:
             return stream_type
-    return types[0] if outgoing else ""
+    return ports[0][1] if outgoing else ""
 
 
 def _canonical_port(value: str, port: str, outgoing: bool) -> str:
-    types = _split_types(value)
+    ports = _split_ports(value)
     default_port = "out" if outgoing else "in"
-    if not types:
+    if not ports:
         return port or default_port
     if not port or port in {"in", "out"}:
-        return _port_name_for_type(types[0], 0, len(types), outgoing) if len(types) > 1 else default_port
+        port_name, stream_type = ports[0]
+        if port_name:
+            return port_name
+        return _port_name_for_type(stream_type, 0, len(ports), outgoing) if len(ports) > 1 else default_port
     valid_ports = {
-        _port_name_for_type(stream_type, index, len(types), outgoing)
-        for index, stream_type in enumerate(types)
+        port_name or _port_name_for_type(stream_type, index, len(ports), outgoing)
+        for index, (port_name, stream_type) in enumerate(ports)
     }
     return port if port in valid_ports else port
