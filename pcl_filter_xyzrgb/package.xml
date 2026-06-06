@@ -11,6 +11,7 @@
 
   <depend>pcl_filter_components</depend>
   <depend>pcl_filter_base</depend>
+  <depend>pcl_filter_synchronizer</depend>
   <depend>pcl_filter_type_adapters</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_components</depend>

@@ -5,6 +5,7 @@
 #define PCL_FILTER_COMPONENTS__PIPELINE__PIPELINE_FACTORY_NODE_HPP_
 
 #include <memory>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -44,8 +45,10 @@ private:
   void loadPipeline();
   void unloadPipeline();
   std::vector<rclcpp::Parameter> parametersForNode(const PipelineNode & node) const;
-  std::vector<std::string> inputTopicsForNode(const std::string & node_id) const;
-  std::string outputTopicForNode(const std::string & node_id) const;
+  std::vector<std::pair<std::string, std::string>> inputTopicsForNode(
+    const std::string & node_id) const;
+  std::vector<std::pair<std::string, std::string>> outputTopicsForNode(
+    const std::string & node_id) const;
 
   std::weak_ptr<rclcpp::Executor> executor_;
   std::shared_ptr<rclcpp_components::ComponentManager> component_manager_;

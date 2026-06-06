@@ -43,32 +43,6 @@ protected:
   using StampedCloud = typename Base::StampedCloud;
   using CloudAdapter = typename Base::CloudAdapter;
 
-  void configureInterfaces(const rclcpp::QoS & qos) override
-  {
-    output_indices_ = getParameter<bool>(*this, "filter.output_indices");
-    if (output_indices_) {
-      indices_pub_ = this->template createAdaptedPublisher<PclIndicesAdapter>(
-        this->output_topic_,
-        qos);
-      this->sub_ = this->template create_subscription<CloudAdapter>(
-        this->input_topic_,
-        qos,
-        std::bind(
-          &OptionalIndicesOutputComponent::cloudCallback,
-          this,
-          std::placeholders::_1));
-      return;
-    }
-
-    Base::configureInterfaces(qos);
-  }
-
-  void cleanupInterfaces() override
-  {
-    indices_pub_.reset();
-    Base::cleanupInterfaces();
-  }
-
   void processCloud(std::unique_ptr<StampedCloud> input) override
   {
     if (!output_indices_) {
@@ -79,11 +53,23 @@ protected:
     auto output = std::make_unique<pcl::PointIndices>();
     output->header = input->header;
     this->filter_.filterIndices(*input, output->indices);
-    indices_pub_->publish(std::move(output));
+    this->template publish<PclIndicesAdapter>("indices", std::move(output));
+  }
+
+  void configureInterfaces(const rclcpp::QoS & qos) override
+  {
+    Base::configureInterfaces(qos);
+    output_indices_ = getParameter<bool>(*this, "filter.output_indices");
+    if (output_indices_) {
+      this->publishers_["indices"] =
+        std::make_unique<typename Base::template PublisherHolder<PclIndicesAdapter>>(
+          this->template createAdaptedPublisher<PclIndicesAdapter>(
+            this->output_topics_.at("indices"),
+            qos));
+    }
   }
 
 private:
-  rclcpp::Publisher<PclIndicesAdapter>::SharedPtr indices_pub_;
   bool output_indices_{false};
 };
 

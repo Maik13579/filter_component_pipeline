@@ -69,6 +69,9 @@ void expectCommonParameterMetadata(const NodeT & node)
   expectDeclaredWithDescription(
     node,
     {
+      "inputs.cloud.topic",
+      "outputs.cloud.topic",
+      "outputs.indices.topic",
       "input_topic",
       "output_topic",
       "queue_size",
@@ -76,10 +79,16 @@ void expectCommonParameterMetadata(const NodeT & node)
     });
   expectIntegerRange(node, "queue_size");
 
+  EXPECT_EQ(node.get_parameter("inputs.cloud.topic").as_string(), "/points/input");
+  EXPECT_EQ(node.get_parameter("outputs.cloud.topic").as_string(), "/points/output");
+  EXPECT_EQ(node.get_parameter("outputs.indices.topic").as_string(), "/points/output");
   EXPECT_EQ(node.get_parameter("input_topic").as_string(), "/points/input");
   EXPECT_EQ(node.get_parameter("output_topic").as_string(), "/points/output");
   EXPECT_EQ(node.get_parameter("queue_size").as_int(), 5);
   EXPECT_FALSE(node.get_parameter("filter.output_indices").as_bool());
+  EXPECT_FALSE(node.has_parameter("sync.policy"));
+  EXPECT_FALSE(node.has_parameter("sync.queue_size"));
+  EXPECT_FALSE(node.has_parameter("sync.slop"));
 }
 
 TEST(ParameterDescriptors, VoxelGridXYZIParametersExposeEditorMetadata)
@@ -192,17 +201,28 @@ TEST(ParameterDescriptors, PointCloudMergerXYZIParametersExposeEditorMetadata)
   expectDeclaredWithDescription(
     *node,
     {
-      "input_topic_a",
-      "input_topic_b",
+      "inputs.input_1.topic",
+      "inputs.input_2.topic",
+      "outputs.cloud.topic",
+      "input_topic",
       "output_topic",
       "queue_size",
+      "sync.policy",
+      "sync.queue_size",
+      "sync.slop",
     });
   expectIntegerRange(*node, "queue_size");
+  expectIntegerRange(*node, "sync.queue_size");
+  expectFloatingPointRange(*node, "sync.slop");
 
-  EXPECT_EQ(node->get_parameter("input_topic_a").as_string(), "/points/input_a");
-  EXPECT_EQ(node->get_parameter("input_topic_b").as_string(), "/points/input_b");
+  EXPECT_EQ(node->get_parameter("inputs.input_1.topic").as_string(), "/points/input_a");
+  EXPECT_EQ(node->get_parameter("inputs.input_2.topic").as_string(), "/points/input_b");
+  EXPECT_EQ(node->get_parameter("outputs.cloud.topic").as_string(), "/points/output");
   EXPECT_EQ(node->get_parameter("output_topic").as_string(), "/points/output");
   EXPECT_EQ(node->get_parameter("queue_size").as_int(), 5);
+  EXPECT_EQ(node->get_parameter("sync.policy").as_string(), "ExactTime");
+  EXPECT_EQ(node->get_parameter("sync.queue_size").as_int(), 10);
+  EXPECT_DOUBLE_EQ(node->get_parameter("sync.slop").as_double(), 0.05);
 
   node.reset();
   context->shutdown("test complete");

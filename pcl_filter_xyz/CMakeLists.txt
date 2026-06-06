@@ -11,6 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(ament_cmake REQUIRED)
 find_package(pcl_filter_components REQUIRED)
 find_package(pcl_filter_base REQUIRED)
+find_package(pcl_filter_synchronizer REQUIRED)
 find_package(pcl_filter_type_adapters REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
@@ -37,6 +38,7 @@ target_link_libraries(${PROJECT_NAME}_components ${PCL_LIBRARIES})
 ament_target_dependencies(${PROJECT_NAME}_components
   pcl_filter_components
   pcl_filter_base
+  pcl_filter_synchronizer
   pcl_filter_type_adapters
   rclcpp
   rclcpp_components
@@ -68,6 +70,7 @@ ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_dependencies(
   pcl_filter_components
   pcl_filter_base
+  pcl_filter_synchronizer
   pcl_filter_type_adapters
   rclcpp
   rclcpp_components

@@ -5,147 +5,87 @@
 #define PCL_FILTER_COMPONENTS__ROS__POINT_CLOUD_MERGER_COMPONENT_HPP_
 
 #include <memory>
-#include <mutex>
-#include <string>
+#include <vector>
 
-#include <lifecycle_msgs/msg/state.hpp>
-#include <rclcpp/create_publisher.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include <rclcpp_lifecycle/lifecycle_node.hpp>
 
-#include "pcl_filter_base/ros/parameter_utils.hpp"
+#include "pcl_filter_base/ros/pcl_filter_component_base.hpp"
 #include "pcl_filter_type_adapters/ros/stamped_pcl_type_adapter.hpp"
 
 namespace pcl_filter_components::ros
 {
 
-using pcl_filter_base::ros::declareParameterIfNotDeclared;
-using pcl_filter_base::ros::getParameter;
-using pcl_filter_base::ros::makeIntegerRangeParameterDescriptor;
-using pcl_filter_base::ros::makeParameterDescriptor;
+namespace detail
+{
 
 template <typename PointT>
-class PointCloudMergerComponent : public rclcpp_lifecycle::LifecycleNode
+struct NoopFilter
+{
+  void filter(
+    const pcl::PointCloud<PointT> & input,
+    pcl::PointCloud<PointT> & output) const
+  {
+    output = input;
+  }
+};
+
+}  // namespace detail
+
+template <typename PointT>
+class PointCloudMergerComponent
+  : public pcl_filter_base::ros::PclFilterComponentBase<PointT, detail::NoopFilter<PointT>>
 {
 public:
-  using StampedCloud = pcl::PointCloud<PointT>;
-  using CloudAdapter = pcl_filter_type_adapters::ros::PclCloudAdapter<PointT>;
-  using CallbackReturn =
-    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+  using Base = pcl_filter_base::ros::PclFilterComponentBase<PointT, detail::NoopFilter<PointT>>;
+  using PortDescriptor = typename Base::PortDescriptor;
+  using StampedCloud = typename Base::StampedCloud;
+  using CloudAdapter = typename Base::CloudAdapter;
 
   explicit PointCloudMergerComponent(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
-  : rclcpp_lifecycle::LifecycleNode("point_cloud_merger", options)
+  : Base(
+      "point_cloud_merger",
+      options,
+      inputPorts(),
+      outputPorts())
   {
-    declareParameterIfNotDeclared(
-      *this,
-      "input_topic_a",
-      std::string{"/points/input_a"},
-      makeParameterDescriptor("First input point cloud topic."));
-    declareParameterIfNotDeclared(
-      *this,
-      "input_topic_b",
-      std::string{"/points/input_b"},
-      makeParameterDescriptor("Second input point cloud topic."));
-    declareParameterIfNotDeclared(
-      *this,
-      "output_topic",
-      std::string{"/points/output"},
-      makeParameterDescriptor("Merged output point cloud topic."));
-    declareParameterIfNotDeclared(
-      *this,
-      "queue_size",
-      5,
-      makeIntegerRangeParameterDescriptor("Depth used for subscriptions and publisher.", 1, 100000));
   }
 
 protected:
-  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override
+  static std::vector<PortDescriptor> inputPorts()
   {
-    (void)previous_state;
-    const auto input_topic_a = getParameter<std::string>(*this, "input_topic_a");
-    const auto input_topic_b = getParameter<std::string>(*this, "input_topic_b");
-    const auto output_topic = getParameter<std::string>(*this, "output_topic");
-    const auto queue_size = getParameter<int>(*this, "queue_size");
-    const auto depth = queue_size > 0 ? static_cast<size_t>(queue_size) : 1U;
-    const auto qos = rclcpp::SensorDataQoS().keep_last(depth);
-
-    pub_ = rclcpp::create_publisher<CloudAdapter>(*this, output_topic, qos);
-    sub_a_ = this->create_subscription<CloudAdapter>(
-      input_topic_a,
-      qos,
-      [this](std::unique_ptr<StampedCloud> cloud) {cloudCallback(0U, std::move(cloud));});
-    sub_b_ = this->create_subscription<CloudAdapter>(
-      input_topic_b,
-      qos,
-      [this](std::unique_ptr<StampedCloud> cloud) {cloudCallback(1U, std::move(cloud));});
-    active_ = false;
-    return CallbackReturn::SUCCESS;
+    return {
+      {"input_1", "/points/input_a", "First input point cloud topic."},
+      {"input_2", "/points/input_b", "Second input point cloud topic."},
+    };
   }
 
-  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override
+  static std::vector<PortDescriptor> outputPorts()
   {
-    (void)previous_state;
-    active_ = true;
-    return CallbackReturn::SUCCESS;
+    return {{"cloud", "/points/output", "Merged output point cloud topic."}};
   }
 
-  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override
+  void configureFilter() override
   {
-    (void)previous_state;
-    active_ = false;
-    return CallbackReturn::SUCCESS;
   }
 
-  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override
+  void processInputs() override
   {
-    (void)previous_state;
-    sub_a_.reset();
-    sub_b_.reset();
-    pub_.reset();
-    latest_a_.reset();
-    latest_b_.reset();
-    active_ = false;
-    return CallbackReturn::SUCCESS;
-  }
-
-private:
-  void cloudCallback(size_t index, std::unique_ptr<StampedCloud> cloud)
-  {
-    if (
-      !active_ ||
-      this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
-    {
-      return;
-    }
-
-    std::lock_guard<std::mutex> lock{mutex_};
-    if (index == 0U) {
-      latest_a_ = std::move(cloud);
-    } else {
-      latest_b_ = std::move(cloud);
-    }
-    if (!latest_a_ || !latest_b_) {
+    auto first = this->template takeInput<CloudAdapter>("input_1");
+    auto second = this->template takeInput<CloudAdapter>("input_2");
+    if (!first || !second) {
       return;
     }
 
     auto merged = std::make_unique<StampedCloud>();
-    merged->header = latest_a_->header;
-    merged->reserve(latest_a_->size() + latest_b_->size());
-    merged->insert(merged->end(), latest_a_->begin(), latest_a_->end());
-    merged->insert(merged->end(), latest_b_->begin(), latest_b_->end());
+    merged->header = first->header;
+    merged->reserve(first->size() + second->size());
+    merged->insert(merged->end(), first->begin(), first->end());
+    merged->insert(merged->end(), second->begin(), second->end());
     merged->width = static_cast<uint32_t>(merged->size());
     merged->height = 1U;
-    merged->is_dense = latest_a_->is_dense && latest_b_->is_dense;
-    pub_->publish(std::move(merged));
+    merged->is_dense = first->is_dense && second->is_dense;
+    this->template publish<CloudAdapter>("cloud", std::move(merged));
   }
-
-  typename rclcpp::Publisher<CloudAdapter>::SharedPtr pub_;
-  typename rclcpp::Subscription<CloudAdapter>::SharedPtr sub_a_;
-  typename rclcpp::Subscription<CloudAdapter>::SharedPtr sub_b_;
-  std::unique_ptr<StampedCloud> latest_a_;
-  std::unique_ptr<StampedCloud> latest_b_;
-  std::mutex mutex_;
-  bool active_{false};
 };
 
 }  // namespace pcl_filter_components::ros

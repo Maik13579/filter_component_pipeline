@@ -62,11 +62,28 @@ std::string packageFromComponentClass(const std::string & component_class)
   return component_class.substr(0, delimiter);
 }
 
+std::string normalizedInputPort(const std::string & port)
+{
+  if (port == "in" || port.empty()) {
+    return "cloud";
+  }
+  return port;
+}
+
+std::string normalizedOutputPort(const std::string & port)
+{
+  if (port == "out" || port.empty()) {
+    return "cloud";
+  }
+  return port;
+}
+
 size_t inputIndexForPort(const std::string & port, size_t fallback)
 {
-  if (port.rfind("input_", 0) == 0) {
+  const auto normalized = normalizedInputPort(port);
+  if (normalized.rfind("input_", 0) == 0) {
     try {
-      const auto value = std::stoul(port.substr(6));
+      const auto value = std::stoul(normalized.substr(6));
       if (value > 0U) {
         return value - 1U;
       }
@@ -76,18 +93,14 @@ size_t inputIndexForPort(const std::string & port, size_t fallback)
   return fallback;
 }
 
-std::string inputParameterName(size_t index, size_t count)
+std::string inputParameterName(const std::string & port)
 {
-  if (count <= 1U) {
-    return "input_topic";
-  }
-  if (index == 0U) {
-    return "input_topic_a";
-  }
-  if (index == 1U) {
-    return "input_topic_b";
-  }
-  return "input_topic_" + std::to_string(index + 1U);
+  return "inputs." + normalizedInputPort(port) + ".topic";
+}
+
+std::string outputParameterName(const std::string & port)
+{
+  return "outputs." + normalizedOutputPort(port) + ".topic";
 }
 
 }  // namespace
@@ -239,25 +252,31 @@ std::vector<rclcpp::Parameter> PipelineFactoryNode::parametersForNode(const Pipe
   }
 
   const auto input_topics = inputTopicsForNode(node.id);
-  for (size_t index = 0; index < input_topics.size(); ++index) {
-    if (!input_topics[index].empty()) {
+  for (const auto & [port, topic] : input_topics) {
+    if (!topic.empty()) {
       parameters.push_back(rclcpp::Parameter{
-          inputParameterName(index, input_topics.size()),
-          input_topics[index]});
+          inputParameterName(port),
+          topic});
     }
   }
 
-  const auto output_topic = outputTopicForNode(node.id);
-  if (!output_topic.empty()) {
-    parameters.push_back(rclcpp::Parameter{"output_topic", output_topic});
+  for (const auto & [port, topic] : outputTopicsForNode(node.id)) {
+    if (!topic.empty()) {
+      parameters.push_back(rclcpp::Parameter{outputParameterName(port), topic});
+    }
+  }
+
+  for (const auto & [name, value] : node.sync) {
+    parameters.push_back(parameterFromString("sync." + name, value));
   }
 
   return parameters;
 }
 
-std::vector<std::string> PipelineFactoryNode::inputTopicsForNode(const std::string & node_id) const
+std::vector<std::pair<std::string, std::string>> PipelineFactoryNode::inputTopicsForNode(
+  const std::string & node_id) const
 {
-  std::vector<std::string> topics;
+  std::vector<std::pair<std::string, std::string>> topics;
   for (const auto & edge : graph_.edges) {
     if (edge.to.node != node_id) {
       continue;
@@ -273,13 +292,15 @@ std::vector<std::string> PipelineFactoryNode::inputTopicsForNode(const std::stri
     if (topics.size() <= index) {
       topics.resize(index + 1U);
     }
-    topics[index] = topic;
+    topics[index] = {normalizedInputPort(edge.to.port), topic};
   }
   return topics;
 }
 
-std::string PipelineFactoryNode::outputTopicForNode(const std::string & node_id) const
+std::vector<std::pair<std::string, std::string>> PipelineFactoryNode::outputTopicsForNode(
+  const std::string & node_id) const
 {
+  std::vector<std::pair<std::string, std::string>> topics;
   for (const auto & edge : graph_.edges) {
     if (edge.from.node != node_id) {
       continue;
@@ -289,11 +310,14 @@ std::string PipelineFactoryNode::outputTopicForNode(const std::string & node_id)
       continue;
     }
     if (target->type == "topic") {
-      return target->topic;
+      topics.push_back({normalizedOutputPort(edge.from.port), target->topic});
+      continue;
     }
-    return edge.topic.empty() ? "~/" + edge.from.node + "-" + edge.to.node : edge.topic;
+    topics.push_back(
+      {normalizedOutputPort(edge.from.port),
+        edge.topic.empty() ? "~/" + edge.from.node + "-" + edge.to.node : edge.topic});
   }
-  return {};
+  return topics;
 }
 
 }  // namespace pcl_filter_factory::pipeline
