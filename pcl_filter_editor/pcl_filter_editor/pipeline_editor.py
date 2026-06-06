@@ -5,7 +5,7 @@ import json
 import math
 
 from python_qt_binding.QtCore import QPointF, QRectF, Qt
-from python_qt_binding.QtGui import QColor, QBrush, QPainter, QPen, QPolygonF
+from python_qt_binding.QtGui import QColor, QBrush, QFontMetrics, QPainter, QPen, QPolygonF
 from python_qt_binding.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -133,8 +133,9 @@ class EdgeItem(QGraphicsLineItem):
 
 class NodeItem(QGraphicsRectItem):
     def __init__(self, node: Node, editor: "PipelineEditor") -> None:
-        width = 280 if node.type == "topic" else 190
-        super().__init__(0, 0, width, 68)
+        width = 260 if node.type == "topic" else 240
+        height = 64
+        super().__init__(0, 0, width, height)
         self.node = node
         self.editor = editor
         self.setFlag(QGraphicsItem.ItemIsMovable)
@@ -143,24 +144,29 @@ class NodeItem(QGraphicsRectItem):
         self.border_color = self.editor.theme_color("mid")
         self.setBrush(self.editor.node_fill(node.type))
         self.setPen(QPen(self.border_color, 1.5))
-        title = QGraphicsSimpleTextItem(node.topic if node.type == "topic" else node.name or node.id, self)
-        title.setPos(54 if node.type == "topic" else 8, 10 if node.type == "topic" else 6)
+        self.accent = self._accent_color()
+        text_x = 18
+        text_width = int(width - text_x - 14)
+        title_text = node.topic if node.type == "topic" else node.name or node.id
+        subtitle_text = self._subtitle_text()
+        title_font = self.editor.widget.font()
+        title_font.setBold(True)
+        title = QGraphicsSimpleTextItem(self._elided_text(title_text, text_width, title_font), self)
+        title.setFont(title_font)
+        title.setPos(text_x, 10)
         title.setBrush(self.editor.theme_color("text"))
-        type_label = node.output_type or node.input_type if node.type == "topic" else node.filter if node.type == "filter" else ""
-        subtitle = QGraphicsSimpleTextItem(type_label, self)
-        subtitle.setPos(54 if node.type == "topic" else 8, 34 if node.type == "topic" else 28)
+        subtitle = QGraphicsSimpleTextItem(self._elided_text(subtitle_text, text_width), self)
+        subtitle.setPos(text_x, 34)
         subtitle.setBrush(self.editor.theme_color("text"))
-        port_label = self._port_label()
-        ports = QGraphicsSimpleTextItem(port_label, self)
-        ports.setPos(8, 48)
-        ports.setBrush(self.editor.theme_color("text"))
-        if node.type in {"filter", "topic"}:
-            ports.setVisible(False)
+        self.setToolTip(self._tooltip_text())
         input_pos, output_pos = self._port_positions()
         self.input_port = QGraphicsEllipseItem(input_pos.x(), input_pos.y(), 12, 12, self)
         self.output_port = QGraphicsEllipseItem(output_pos.x(), output_pos.y(), 12, 12, self)
-        self.input_port.setBrush(self.editor.theme_color("text"))
-        self.output_port.setBrush(self.editor.theme_color("text"))
+        port_brush = QBrush(self.accent)
+        self.input_port.setBrush(port_brush)
+        self.output_port.setBrush(port_brush)
+        self.input_port.setPen(QPen(self.editor.theme_color("base"), 1.0))
+        self.output_port.setPen(QPen(self.editor.theme_color("base"), 1.0))
         self.update_port_visibility()
 
     def paint(self, painter, option, widget=None) -> None:
@@ -170,20 +176,15 @@ class NodeItem(QGraphicsRectItem):
         else:
             self.setPen(QPen(self.border_color, 1.5))
             self.setBrush(self.editor.node_fill(self.node.type))
-        if self.node.type == "topic":
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.setPen(self.pen())
-            painter.setBrush(self.brush())
-            painter.drawPolygon(
-                QPolygonF([
-                    QPointF(28.0, 8.0),
-                    QPointF(52.0, 34.0),
-                    QPointF(28.0, 60.0),
-                    QPointF(4.0, 34.0),
-                ])
-            )
-            return
-        super().paint(painter, option, widget)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = self.rect()
+        painter.setPen(self.pen())
+        painter.setBrush(self.brush())
+        painter.drawRoundedRect(rect, 7.0, 7.0)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(self.accent))
+        painter.drawRoundedRect(QRectF(rect.left(), rect.top(), 8.0, rect.height()), 7.0, 7.0)
+        painter.drawRect(QRectF(rect.left() + 4.0, rect.top(), 4.0, rect.height()))
 
     def itemChange(self, change, value):
         result = super().itemChange(change, value)
@@ -200,14 +201,12 @@ class NodeItem(QGraphicsRectItem):
 
     def _port_positions(self) -> tuple[QPointF, QPointF]:
         width = self.rect().width()
+        height = self.rect().height()
         if self.editor.top_down_mode:
-            center_x = 28 if self.node.type == "topic" else width / 2.0
-            if self.node.type == "topic":
-                return QPointF(center_x - 6, 0), QPointF(center_x - 6, 56)
+            center_x = width / 2.0
             return QPointF(center_x - 6, -6), QPointF(center_x - 6, 62)
-        if self.node.type == "topic":
-            return QPointF(0, 28), QPointF(40, 28)
-        return QPointF(-6, 28), QPointF(width - 6, 28)
+        center_y = height / 2.0
+        return QPointF(-6, center_y - 6), QPointF(width - 6, center_y - 6)
 
     def output_port_name(self, item) -> str:
         return "out"
@@ -220,10 +219,34 @@ class NodeItem(QGraphicsRectItem):
         self.input_port.setVisible(bool(self.editor.available_input_ports(self.node)))
         self.output_port.setVisible(bool(self.editor.available_output_ports(self.node)))
 
-    def _port_label(self) -> str:
+    def _subtitle_text(self) -> str:
         if self.node.type == "topic":
-            return f"topic: {self.node.output_type or self.node.input_type or '?'}"
+            return self.node.output_type or self.node.input_type or "topic"
+        if self.node.type == "filter":
+            return f"{self.node.input_type or '?'} -> {self.node.output_type or '?'}"
+        return self.node.type
+
+    def _tooltip_text(self) -> str:
+        if self.node.type == "topic":
+            return f"{self.node.topic}\n{self._subtitle_text()}"
+        if self.node.type == "filter":
+            return (
+                f"{self.node.name or self.node.id}\n"
+                f"{self.node.package}/{self.node.filter}\n"
+                f"{self._subtitle_text()}"
+            )
         return f"{self.node.input_type or '?'} -> {self.node.output_type or '?'}"
+
+    def _accent_color(self) -> QColor:
+        if self.node.type == "topic":
+            return self.editor.accent_color("default")
+        seed = self.node.package or self.node.filter or self.node.id
+        hue = sum((index + 1) * ord(character) for index, character in enumerate(seed)) % 360
+        return QColor.fromHsv(hue, 120, 205)
+
+    def _elided_text(self, text: str, width: int, font=None) -> str:
+        metrics = QFontMetrics(font or self.editor.widget.font())
+        return metrics.elidedText(text or "unknown", Qt.ElideRight, width)
 
 
 class PipelineView(QGraphicsView):
