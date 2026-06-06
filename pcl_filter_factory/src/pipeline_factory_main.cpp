@@ -49,6 +49,21 @@ int main(int argc, char ** argv)
     .use_intra_process_comms(true)
     .parameter_overrides({rclcpp::Parameter{"executor_threads", static_cast<int>(executor_threads)}}));
   executor->add_node(node->get_node_base_interface());
+
+  pcl_filter_factory::pipeline::PipelineFactoryNode::CallbackReturn callback_return;
+  node->configure(callback_return);
+  if (callback_return != pcl_filter_factory::pipeline::PipelineFactoryNode::CallbackReturn::SUCCESS) {
+    RCLCPP_ERROR(node->get_logger(), "Failed to configure pipeline factory");
+    rclcpp::shutdown();
+    return 1;
+  }
+  node->activate(callback_return);
+  if (callback_return != pcl_filter_factory::pipeline::PipelineFactoryNode::CallbackReturn::SUCCESS) {
+    RCLCPP_ERROR(node->get_logger(), "Failed to activate pipeline factory");
+    rclcpp::shutdown();
+    return 1;
+  }
+
   executor->spin();
   rclcpp::shutdown();
   return 0;

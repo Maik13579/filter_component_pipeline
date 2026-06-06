@@ -14,6 +14,8 @@
   <depend>rclcpp_lifecycle</depend>
   <depend>yaml_cpp_vendor</depend>
 
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>pcl_filter_xyzi</exec_depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
