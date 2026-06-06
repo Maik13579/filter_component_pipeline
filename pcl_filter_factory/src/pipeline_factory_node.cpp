@@ -4,8 +4,10 @@
 #include "pcl_filter_factory/pipeline/pipeline_factory_node.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -102,6 +104,83 @@ std::string inputParameterName(const std::string & port)
 std::string outputParameterName(const std::string & port)
 {
   return "outputs." + normalizedOutputPort(port) + ".topic";
+}
+
+std::vector<std::string> splitTypes(const std::string & value)
+{
+  std::vector<std::string> types;
+  std::stringstream stream{value};
+  std::string item;
+  while (std::getline(stream, item, ',')) {
+    const auto first = item.find_first_not_of(" \t\n\r");
+    if (first == std::string::npos) {
+      continue;
+    }
+    const auto last = item.find_last_not_of(" \t\n\r");
+    types.push_back(item.substr(first, last - first + 1U));
+  }
+  return types;
+}
+
+std::string portNameForType(
+  const std::string & stream_type,
+  size_t index,
+  size_t total,
+  bool outgoing)
+{
+  if (!outgoing && total > 1U) {
+    return "input_" + std::to_string(index + 1U);
+  }
+  if (stream_type == "PointIndices") {
+    return "indices";
+  }
+  if (stream_type.rfind("Point", 0) == 0) {
+    return "cloud";
+  }
+  auto name = stream_type;
+  std::replace(name.begin(), name.end(), '/', '_');
+  std::replace(name.begin(), name.end(), ':', '_');
+  std::transform(name.begin(), name.end(), name.begin(), [](unsigned char value) {
+      return static_cast<char>(std::tolower(value));
+    });
+  return name.empty() ? (outgoing ? "out" : "in") : name;
+}
+
+std::vector<std::string> portsForType(const std::string & value, bool outgoing)
+{
+  const auto types = splitTypes(value);
+  auto ports = std::vector<std::string>{};
+  for (size_t index = 0; index < types.size(); ++index) {
+    ports.push_back(portNameForType(types[index], index, types.size(), outgoing));
+  }
+  return ports;
+}
+
+std::string topicNamePartForText(const std::string & text)
+{
+  auto name = text;
+  if (name.rfind("~/", 0) == 0) {
+    name.erase(0, 2);
+  }
+  while (!name.empty() && name.front() == '/') {
+    name.erase(name.begin());
+  }
+  while (!name.empty() && name.back() == '/') {
+    name.pop_back();
+  }
+  std::replace(name.begin(), name.end(), '/', '_');
+  std::replace(name.begin(), name.end(), '-', '_');
+  return name.empty() ? "node" : name;
+}
+
+std::string sharedEdgeTopic(const PipelineEdge & edge)
+{
+  return "/" + topicNamePartForText(edge.from.node) + "_" + topicNamePartForText(edge.to.node);
+}
+
+std::string hiddenPortTopic(const std::string & direction, const std::string & port)
+{
+  return "~/_" + direction + "/" + topicNamePartForText(port);
 }
 
 void appendPortQosParameters(
@@ -273,11 +352,46 @@ std::vector<rclcpp::Parameter> PipelineFactoryNode::parametersForNode(const Pipe
           topic});
     }
   }
+  for (const auto & port : portsForType(node.input_type, false)) {
+    const auto existing = std::find_if(
+      inbound_topics.begin(),
+      inbound_topics.end(),
+      [&port](const auto & item) {return item.first == port;});
+    if (existing != inbound_topics.end()) {
+      continue;
+    }
+    const auto topic = hiddenPortTopic("input", port);
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Filter '%s' input port '%s' has no configured topic; using hidden fallback '%s'",
+      node.id.c_str(),
+      port.c_str(),
+      topic.c_str());
+    parameters.push_back(rclcpp::Parameter{inputParameterName(port), topic});
+  }
 
-  for (const auto & [port, topic] : outputTopicsForNode(node.id)) {
+  const auto outbound_topics = outputTopicsForNode(node.id);
+  for (const auto & [port, topic] : outbound_topics) {
     if (!topic.empty()) {
       parameters.push_back(rclcpp::Parameter{outputParameterName(port), topic});
     }
+  }
+  for (const auto & port : portsForType(node.output_type, true)) {
+    const auto existing = std::find_if(
+      outbound_topics.begin(),
+      outbound_topics.end(),
+      [&port](const auto & item) {return item.first == port;});
+    if (existing != outbound_topics.end()) {
+      continue;
+    }
+    const auto topic = hiddenPortTopic("output", port);
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Filter '%s' output port '%s' has no configured topic; using hidden fallback '%s'",
+      node.id.c_str(),
+      port.c_str(),
+      topic.c_str());
+    parameters.push_back(rclcpp::Parameter{outputParameterName(port), topic});
   }
 
   appendPortQosParameters(parameters, "inputs", node.inputs);
@@ -304,7 +418,7 @@ std::vector<std::pair<std::string, std::string>> PipelineFactoryNode::inputTopic
     }
     const auto topic = source->type == "topic" ?
       source->topic :
-      (edge.topic.empty() ? "~/" + edge.from.node + "-" + edge.to.node : edge.topic);
+      (edge.topic.empty() ? sharedEdgeTopic(edge) : edge.topic);
     const auto index = inputIndexForPort(edge.to.port, topics.size());
     if (topics.size() <= index) {
       topics.resize(index + 1U);
@@ -332,7 +446,7 @@ std::vector<std::pair<std::string, std::string>> PipelineFactoryNode::outputTopi
     }
     topics.push_back(
       {normalizedOutputPort(edge.from.port),
-        edge.topic.empty() ? "~/" + edge.from.node + "-" + edge.to.node : edge.topic});
+        edge.topic.empty() ? sharedEdgeTopic(edge) : edge.topic});
   }
   return topics;
 }

@@ -1822,7 +1822,7 @@ class PipelineEditor(Plugin):
         return parameters
 
     def _hidden_port_topic(self, direction: str, port: str) -> str:
-        return f"~/.{direction}/{self._topic_name_part_for_text(port) or 'port'}"
+        return f"~/_{direction}/{self._topic_name_part_for_text(port) or 'port'}"
 
     def _sanitize_filter_parameters(self, node: Node) -> None:
         if node.type != "filter":
