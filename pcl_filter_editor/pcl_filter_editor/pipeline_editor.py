@@ -324,10 +324,10 @@ class PipelineEditor(Plugin):
         super().__init__(context)
         self.setObjectName("PipelineEditor")
         self.discovery = discover_filters()
-        self.parameter_discovery = ComponentParameterDiscovery()
+        self.live_runtime = LivePipelineRuntime()
+        self.parameter_discovery = ComponentParameterDiscovery(self.live_runtime)
         self.parameter_descriptions: dict[str, dict[str, str]] = {}
         self.graph = Graph()
-        self.live_runtime = LivePipelineRuntime()
         self.last_live_runtime_error = ""
         self.selected_logical_types = {
             item.point_type for item in self.discovery.types if item.point_type
@@ -605,22 +605,29 @@ class PipelineEditor(Plugin):
         self.parameter_descriptions[export.component_class] = metadata.descriptions
         return metadata
 
-    def _parameter_description(self, node: Node, parameter_name: str) -> str:
-        descriptions = self.parameter_descriptions.get(node.component_class)
-        if descriptions is None:
-            export = FilterExport(
-                package=node.package,
-                filter=node.filter,
-                component_class=node.component_class,
-                input_type=node.input_type,
-                output_type=node.output_type,
+    def _refresh_filter_parameters_for_dialog(self, node: Node) -> None:
+        loaded = self.live_runtime.loaded.get(node.id)
+        if loaded is not None:
+            metadata = self.parameter_discovery.parameters_for_loaded_node(
+                self.live_runtime.node,
+                loaded.full_node_name,
             )
-            try:
-                metadata = self._component_parameter_metadata(export)
-                descriptions = metadata.descriptions
-            except Exception:
-                descriptions = {}
-        return descriptions.get(parameter_name, "")
+            node.parameters = metadata.defaults
+            self.parameter_descriptions[node.component_class] = metadata.descriptions
+            return
+        export = FilterExport(
+            package=node.package,
+            filter=node.filter,
+            component_class=node.component_class,
+            input_type=node.input_type,
+            output_type=node.output_type,
+        )
+        metadata = self._component_parameter_metadata(export)
+        for key, value in metadata.defaults.items():
+            node.parameters.setdefault(key, value)
+
+    def _parameter_description(self, node: Node, parameter_name: str) -> str:
+        return self.parameter_descriptions.get(node.component_class, {}).get(parameter_name, "")
 
     def _selected_node_items(self) -> list[NodeItem]:
         return [item for item in self.scene.selectedItems() if isinstance(item, NodeItem)]
@@ -1232,6 +1239,11 @@ class PipelineEditor(Plugin):
         output_qos_widgets: dict[str, dict[str, QLineEdit | QComboBox]] = {}
         sync_widgets: dict[str, QLineEdit | QComboBox] = {}
         if node.type == "filter":
+            try:
+                self._refresh_filter_parameters_for_dialog(node)
+            except Exception as error:
+                QMessageBox.critical(self.widget, "Parameter Discovery Failed", str(error))
+                return
             self._ensure_filter_port_configs(node)
             if self._filter_has_multiple_inputs(node) and not node.sync:
                 node.sync = self._default_sync()
@@ -1497,13 +1509,20 @@ class PipelineEditor(Plugin):
     def _sync_live_pipeline(self) -> None:
         try:
             missing = self._missing_filter_ports()
+            desired = self._live_component_specs()
             if missing:
-                self.live_runtime.sync({})
-                self.status.setText("Live pipeline stopped until all filter ports are connected.")
+                for spec in desired.values():
+                    spec["configure"] = False
+                self.live_runtime.sync(desired)
+                if desired:
+                    self.status.setText(
+                        f"Live pipeline loaded inactive with {len(desired)} component(s) until all ports are connected."
+                    )
+                else:
+                    self.status.setText("Add filters to load the live pipeline.")
                 self.last_live_runtime_error = ""
                 return
             self.graph.validate()
-            desired = self._live_component_specs()
             self.live_runtime.sync(desired)
             if desired:
                 self.status.setText(f"Live pipeline running with {len(desired)} component(s).")
@@ -1578,6 +1597,20 @@ class PipelineEditor(Plugin):
                     missing.append(f"{node.id}:{port} output")
         return missing
 
+    def _refresh_live_filter_parameters_for_save(self) -> None:
+        for node in self.graph.nodes:
+            if node.type != "filter":
+                continue
+            loaded = self.live_runtime.loaded.get(node.id)
+            if loaded is None:
+                continue
+            metadata = self.parameter_discovery.parameters_for_loaded_node(
+                self.live_runtime.node,
+                loaded.full_node_name,
+            )
+            node.parameters = metadata.defaults
+            self.parameter_descriptions[node.component_class] = metadata.descriptions
+
     def _save(self) -> None:
         self._sync_positions()
         missing = self._missing_filter_ports()
@@ -1595,9 +1628,12 @@ class PipelineEditor(Plugin):
             if not path.endswith((".yaml", ".yml")):
                 path = f"{path}.yaml"
             try:
+                self._refresh_live_filter_parameters_for_save()
                 save_graph(self.graph, path)
             except ValueError as error:
                 QMessageBox.critical(self.widget, "Invalid Graph", str(error))
+            except Exception as error:
+                QMessageBox.critical(self.widget, "Parameter Refresh Failed", str(error))
 
     def _load(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self.widget, "Load Pipeline", "", "YAML (*.yaml *.yml)")

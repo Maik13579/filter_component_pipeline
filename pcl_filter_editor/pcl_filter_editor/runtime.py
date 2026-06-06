@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
+import signal
 import subprocess
 import time
 
+from composition_interfaces.srv import ListNodes
 from composition_interfaces.srv import LoadNode, UnloadNode
 from lifecycle_msgs.msg import Transition
 from lifecycle_msgs.srv import ChangeState
@@ -22,12 +25,14 @@ class LoadedComponent:
     full_node_name: str
     package: str
     component_class: str
+    configured: bool = False
 
 
 class LivePipelineRuntime:
     def __init__(self, container_name: str = "pcl_filter_editor_container") -> None:
         self.container_name = container_name
         self._process: subprocess.Popen | None = None
+        self._owns_process = False
         self._node = None
         self.loaded: dict[str, LoadedComponent] = {}
 
@@ -35,8 +40,13 @@ class LivePipelineRuntime:
         if not rclpy.ok():
             rclpy.init(args=None)
         if self._node is None:
-            self._node = rclpy.create_node("pcl_filter_editor_runtime_client")
+            self._node = rclpy.create_node(f"{self.container_name}_client")
         if self._process is None or self._process.poll() is not None:
+            if self._service_available(f"/{self.container_name}/_container/load_node", LoadNode):
+                self._process = None
+                self._owns_process = False
+                return
+            self.loaded.clear()
             self._process = subprocess.Popen(
                 [
                     "ros2",
@@ -49,7 +59,9 @@ class LivePipelineRuntime:
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                start_new_session=True,
             )
+            self._owns_process = True
         self._wait_for_service(f"/{self.container_name}/_container/load_node", LoadNode)
 
     @property
@@ -58,18 +70,33 @@ class LivePipelineRuntime:
         return self._node
 
     def stop(self) -> None:
-        self.unload_all()
+        if self.loaded:
+            self.unload_all()
+        else:
+            self.loaded.clear()
         if self._node is not None:
             self._node.destroy_node()
             self._node = None
-        if self._process is not None:
-            self._process.terminate()
-            try:
-                self._process.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                self._process.kill()
-                self._process.wait(timeout=2.0)
+        if self._process is not None and self._owns_process:
+            self._terminate_process_group()
             self._process = None
+            self._owns_process = False
+
+    def _terminate_process_group(self) -> None:
+        if self._process is None:
+            return
+        try:
+            os.killpg(self._process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        try:
+            self._process.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(self._process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                return
+            self._process.wait(timeout=2.0)
 
     def sync(self, desired: dict[str, dict[str, object]]) -> None:
         if not desired:
@@ -85,12 +112,15 @@ class LivePipelineRuntime:
                 self.unload(node_id)
 
         for node_id, spec in desired.items():
+            configure = bool(spec.get("configure", True))
             if node_id not in self.loaded:
-                self.load(node_id, spec)
-            else:
+                self.load(node_id, spec, configure=configure)
+            elif configure:
                 self.reconfigure(node_id, spec["parameters"])
+            else:
+                self.update_unconfigured(node_id, spec["parameters"])
 
-    def load(self, node_id: str, spec: dict[str, object]) -> None:
+    def load(self, node_id: str, spec: dict[str, object], configure: bool = True) -> None:
         self.start()
         client = self._client(f"/{self.container_name}/_container/load_node", LoadNode)
         request = LoadNode.Request()
@@ -107,9 +137,12 @@ class LivePipelineRuntime:
             full_node_name=response.full_node_name,
             package=str(spec["package"]),
             component_class=str(spec["component_class"]),
+            configured=False,
         )
-        self._transition(response.full_node_name, Transition.TRANSITION_CONFIGURE)
-        self._transition(response.full_node_name, Transition.TRANSITION_ACTIVATE)
+        if configure:
+            self._transition(response.full_node_name, Transition.TRANSITION_CONFIGURE)
+            self._transition(response.full_node_name, Transition.TRANSITION_ACTIVATE)
+            self.loaded[node_id].configured = True
 
     def unload(self, node_id: str) -> None:
         loaded = self.loaded.pop(node_id, None)
@@ -126,6 +159,8 @@ class LivePipelineRuntime:
         request.unique_id = loaded.unique_id
         response = self._call(client, request, f"unload {node_id}")
         if not response.success:
+            if self._is_missing_component_error(response.error_message):
+                return
             raise RuntimeError(response.error_message or f"Failed to unload {node_id}")
 
     def unload_all(self) -> None:
@@ -134,11 +169,21 @@ class LivePipelineRuntime:
 
     def reconfigure(self, node_id: str, parameters: dict[str, object]) -> None:
         loaded = self.loaded[node_id]
-        self._transition(loaded.full_node_name, Transition.TRANSITION_DEACTIVATE)
-        self._transition(loaded.full_node_name, Transition.TRANSITION_CLEANUP)
+        if loaded.configured:
+            self._transition(loaded.full_node_name, Transition.TRANSITION_DEACTIVATE)
+            self._transition(loaded.full_node_name, Transition.TRANSITION_CLEANUP)
         self._set_parameters(loaded.full_node_name, parameters)
         self._transition(loaded.full_node_name, Transition.TRANSITION_CONFIGURE)
         self._transition(loaded.full_node_name, Transition.TRANSITION_ACTIVATE)
+        loaded.configured = True
+
+    def update_unconfigured(self, node_id: str, parameters: dict[str, object]) -> None:
+        loaded = self.loaded[node_id]
+        if loaded.configured:
+            self._transition(loaded.full_node_name, Transition.TRANSITION_DEACTIVATE)
+            self._transition(loaded.full_node_name, Transition.TRANSITION_CLEANUP)
+            loaded.configured = False
+        self._set_parameters(loaded.full_node_name, parameters)
 
     def _set_parameters(self, full_node_name: str, parameters: dict[str, object]) -> None:
         client = self._client(f"{full_node_name}/set_parameters", SetParameters)
@@ -160,6 +205,16 @@ class LivePipelineRuntime:
     def _parameter_messages(self, parameters: dict[str, object]) -> list[ParameterMsg]:
         return [Parameter(name, value=value).to_parameter_msg() for name, value in parameters.items()]
 
+    def loaded_components(self) -> dict[str, int]:
+        self.start()
+        client = self._client(f"/{self.container_name}/_container/list_nodes", ListNodes)
+        response = self._call(client, ListNodes.Request(), "list loaded nodes")
+        return dict(zip(response.full_node_names, response.unique_ids, strict=False))
+
+    def _is_missing_component_error(self, message: str) -> bool:
+        lowered = message.lower()
+        return "no node" in lowered and "unique_id" in lowered
+
     def _client(self, service_name: str, service_type):
         client = self._node.create_client(service_type, service_name)
         if not client.wait_for_service(timeout_sec=5.0):
@@ -173,6 +228,10 @@ class LivePipelineRuntime:
             if client.wait_for_service(timeout_sec=0.1):
                 return
         raise RuntimeError(f"Service {service_name} did not become available")
+
+    def _service_available(self, service_name: str, service_type) -> bool:
+        client = self._node.create_client(service_type, service_name)
+        return client.wait_for_service(timeout_sec=0.1)
 
     def _call(self, client, request, description: str):
         future = client.call_async(request)
