@@ -83,6 +83,24 @@ if(BUILD_TESTING)
     ${PCL_INCLUDE_DIRS}
   )
   target_link_libraries(test_filters ${PCL_LIBRARIES})
+
+  ament_add_gtest(test_parameter_descriptors test/test_parameter_descriptors.cpp)
+  target_include_directories(test_parameter_descriptors PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${PCL_INCLUDE_DIRS}
+  )
+  target_link_libraries(test_parameter_descriptors
+    ${PROJECT_NAME}_components
+    ${PCL_LIBRARIES}
+  )
+  ament_target_dependencies(test_parameter_descriptors
+    rclcpp
+    rclcpp_lifecycle
+  )
+  set_tests_properties(test_parameter_descriptors PROPERTIES
+    ENVIRONMENT
+      "RMW_IMPLEMENTATION=rmw_fastrtps_cpp;ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST;ROS_LOG_DIR=/tmp/pcl_filter_components_test_logs"
+  )
 endif()
 
 ament_export_include_directories(include)

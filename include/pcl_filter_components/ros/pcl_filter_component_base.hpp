@@ -35,9 +35,24 @@ public:
     const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
   : rclcpp_lifecycle::LifecycleNode(node_name, options)
   {
-    declareParameterIfNotDeclared(*this, "input_topic", std::string{"/points/input"});
-    declareParameterIfNotDeclared(*this, "output_topic", std::string{"/points/output"});
-    declareParameterIfNotDeclared(*this, "queue_size", 5);
+    declareParameterIfNotDeclared(
+      *this,
+      "input_topic",
+      std::string{"/points/input"},
+      makeParameterDescriptor("Input point cloud topic subscribed by the filter."));
+    declareParameterIfNotDeclared(
+      *this,
+      "output_topic",
+      std::string{"/points/output"},
+      makeParameterDescriptor("Output topic published by the filter."));
+    declareParameterIfNotDeclared(
+      *this,
+      "queue_size",
+      5,
+      makeIntegerRangeParameterDescriptor(
+        "Depth used for input subscriptions and output publishers.",
+        1,
+        100000));
   }
 
 protected:

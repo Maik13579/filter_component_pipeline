@@ -23,13 +23,59 @@ public:
       "crop_box_filter",
       options)
   {
-    declareParameterIfNotDeclared(*this, "filter.min_x", -10.0);
-    declareParameterIfNotDeclared(*this, "filter.min_y", -10.0);
-    declareParameterIfNotDeclared(*this, "filter.min_z", -2.0);
-    declareParameterIfNotDeclared(*this, "filter.max_x", 10.0);
-    declareParameterIfNotDeclared(*this, "filter.max_y", 10.0);
-    declareParameterIfNotDeclared(*this, "filter.max_z", 3.0);
-    declareParameterIfNotDeclared(*this, "filter.invert", false);
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.min_x",
+      -10.0,
+      makeFloatingPointRangeParameterDescriptor(
+        "Minimum x bound of the crop box in meters.",
+        -1.0e6,
+        1.0e6));
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.min_y",
+      -10.0,
+      makeFloatingPointRangeParameterDescriptor(
+        "Minimum y bound of the crop box in meters.",
+        -1.0e6,
+        1.0e6));
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.min_z",
+      -2.0,
+      makeFloatingPointRangeParameterDescriptor(
+        "Minimum z bound of the crop box in meters.",
+        -1.0e6,
+        1.0e6));
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.max_x",
+      10.0,
+      makeFloatingPointRangeParameterDescriptor(
+        "Maximum x bound of the crop box in meters.",
+        -1.0e6,
+        1.0e6));
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.max_y",
+      10.0,
+      makeFloatingPointRangeParameterDescriptor(
+        "Maximum y bound of the crop box in meters.",
+        -1.0e6,
+        1.0e6));
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.max_z",
+      3.0,
+      makeFloatingPointRangeParameterDescriptor(
+        "Maximum z bound of the crop box in meters.",
+        -1.0e6,
+        1.0e6));
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.invert",
+      false,
+      makeParameterDescriptor("Keep points outside the crop box when enabled."));
   }
 
 protected:

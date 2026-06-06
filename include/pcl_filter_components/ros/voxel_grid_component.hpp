@@ -23,10 +23,35 @@ public:
       "voxel_grid_filter",
       options)
   {
-    declareParameterIfNotDeclared(*this, "filter.leaf_size_x", 0.05);
-    declareParameterIfNotDeclared(*this, "filter.leaf_size_y", 0.05);
-    declareParameterIfNotDeclared(*this, "filter.leaf_size_z", 0.05);
-    declareParameterIfNotDeclared(*this, "filter.invert", false);
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.leaf_size_x",
+      0.05,
+      makeFloatingPointRangeParameterDescriptor(
+        "Voxel grid leaf size along the x axis in meters.",
+        1.0e-6,
+        1000.0));
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.leaf_size_y",
+      0.05,
+      makeFloatingPointRangeParameterDescriptor(
+        "Voxel grid leaf size along the y axis in meters.",
+        1.0e-6,
+        1000.0));
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.leaf_size_z",
+      0.05,
+      makeFloatingPointRangeParameterDescriptor(
+        "Voxel grid leaf size along the z axis in meters.",
+        1.0e-6,
+        1000.0));
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.invert",
+      false,
+      makeParameterDescriptor("Return points or indices outside the selected voxel representatives."));
   }
 
 protected:

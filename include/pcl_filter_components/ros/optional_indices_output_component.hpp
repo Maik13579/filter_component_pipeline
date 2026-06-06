@@ -28,7 +28,12 @@ public:
     const rclcpp::NodeOptions & options)
   : PclFilterComponentBase<PointT, FilterT>(node_name, options)
   {
-    declareParameterIfNotDeclared(*this, "filter.output_indices", false);
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.output_indices",
+      false,
+      makeParameterDescriptor(
+        "Publish filtered point indices instead of a filtered point cloud when enabled."));
   }
 
 protected:

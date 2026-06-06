@@ -25,10 +25,34 @@ public:
       "passthrough_filter",
       options)
   {
-    declareParameterIfNotDeclared(*this, "filter.field_name", std::string{"z"});
-    declareParameterIfNotDeclared(*this, "filter.min_value", -1.0);
-    declareParameterIfNotDeclared(*this, "filter.max_value", 2.0);
-    declareParameterIfNotDeclared(*this, "filter.invert", false);
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.field_name",
+      std::string{"z"},
+      makeParameterDescriptor(
+        "Point field used for pass-through filtering.",
+        "Use a scalar field present in the input point type, such as x, y, z, or intensity."));
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.min_value",
+      -1.0,
+      makeFloatingPointRangeParameterDescriptor(
+        "Inclusive lower limit for the selected point field.",
+        -1.0e9,
+        1.0e9));
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.max_value",
+      2.0,
+      makeFloatingPointRangeParameterDescriptor(
+        "Inclusive upper limit for the selected point field.",
+        -1.0e9,
+        1.0e9));
+    declareParameterIfNotDeclared(
+      *this,
+      "filter.invert",
+      false,
+      makeParameterDescriptor("Keep points outside the pass-through range when enabled."));
   }
 
 protected:
