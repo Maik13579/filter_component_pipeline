@@ -1765,7 +1765,7 @@ class PipelineEditor(Plugin):
             if desired:
                 status = f"Live pipeline running with {len(desired)} component(s)."
                 if missing:
-                    status += " Save is blocked until all ports are connected."
+                    status += " Unconnected ports use hidden fallback topics."
                 self.status.setText(status)
             self.last_live_runtime_error = ""
         except Exception as error:
@@ -1915,14 +1915,17 @@ class PipelineEditor(Plugin):
         self._sync_positions()
         missing = self._missing_filter_ports()
         if missing:
-            QMessageBox.warning(
+            result = QMessageBox.warning(
                 self.widget,
                 "Unconnected Ports",
                 "The following filter ports are unconnected:\n"
                 + "\n".join(missing)
-                + "\n\nYou can double-click the white sphere until it is gone.",
+                + "\n\nHidden fallback topics will be used for these ports. Save anyway?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
             )
-            return
+            if result != QMessageBox.Yes:
+                return
         path, _ = QFileDialog.getSaveFileName(self.widget, "Save Pipeline", "", "YAML (*.yaml *.yml)")
         if path:
             if not path.endswith((".yaml", ".yml")):
