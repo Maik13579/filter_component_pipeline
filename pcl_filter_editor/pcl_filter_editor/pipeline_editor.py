@@ -686,7 +686,7 @@ class PipelineEditor(Plugin):
         if not options:
             return port or ("out" if outgoing else "in")
         if not port or port in {"in", "out"}:
-            return options[0][0] if len(options) > 1 else ("out" if outgoing else "in")
+            return options[0][0]
         valid_ports = {option_port for option_port, _stream_type, _label in options}
         return port if port in valid_ports else port
 
@@ -697,18 +697,30 @@ class PipelineEditor(Plugin):
         return self._canonical_port(node, port, True)
 
     def _occupied_input_ports(self, node: Node) -> set[str]:
-        return {
-            self._canonical_input_port(node, edge.target.port)
-            for edge in self.graph.edges
-            if edge.target.node == node.id and node.type == "filter"
-        }
+        occupied: set[str] = set()
+        if node.type != "filter":
+            return occupied
+        nodes_by_id = {graph_node.id: graph_node for graph_node in self.graph.nodes}
+        for edge in self.graph.edges:
+            if edge.target.node != node.id:
+                continue
+            source = nodes_by_id.get(edge.source.node)
+            if source is not None and source.type == "topic":
+                occupied.add(self._canonical_input_port(node, edge.target.port))
+        return occupied
 
     def _occupied_output_ports(self, node: Node) -> set[str]:
-        return {
-            self._canonical_output_port(node, edge.source.port)
-            for edge in self.graph.edges
-            if edge.source.node == node.id and node.type == "filter"
-        }
+        occupied: set[str] = set()
+        if node.type != "filter":
+            return occupied
+        nodes_by_id = {graph_node.id: graph_node for graph_node in self.graph.nodes}
+        for edge in self.graph.edges:
+            if edge.source.node != node.id:
+                continue
+            target = nodes_by_id.get(edge.target.node)
+            if target is not None and target.type == "topic":
+                occupied.add(self._canonical_output_port(node, edge.source.port))
+        return occupied
 
     def available_input_ports(self, node: Node) -> list[tuple[str, str, str]]:
         if node.type != "filter":

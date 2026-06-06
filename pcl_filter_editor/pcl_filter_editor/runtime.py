@@ -33,6 +33,7 @@ class LivePipelineRuntime:
         self.container_name = container_name
         self._process: subprocess.Popen | None = None
         self._owns_process = False
+        self._attached_existing_process = False
         self._node = None
         self.loaded: dict[str, LoadedComponent] = {}
 
@@ -45,6 +46,9 @@ class LivePipelineRuntime:
             if self._service_available(f"/{self.container_name}/_container/load_node", LoadNode):
                 self._process = None
                 self._owns_process = False
+                self._attached_existing_process = True
+                if not self.loaded:
+                    self._adopt_loaded_components()
                 return
             self.loaded.clear()
             self._process = subprocess.Popen(
@@ -62,6 +66,7 @@ class LivePipelineRuntime:
                 start_new_session=True,
             )
             self._owns_process = True
+            self._attached_existing_process = False
         self._wait_for_service(f"/{self.container_name}/_container/load_node", LoadNode)
 
     @property
@@ -70,8 +75,11 @@ class LivePipelineRuntime:
         return self._node
 
     def stop(self) -> None:
-        if self.loaded:
-            self.unload_all()
+        if self.loaded and self._node is not None and rclpy.ok():
+            try:
+                self.unload_all(ensure_started=False)
+            except RuntimeError:
+                self.loaded.clear()
         else:
             self.loaded.clear()
         if self._node is not None:
@@ -81,6 +89,9 @@ class LivePipelineRuntime:
             self._terminate_process_group()
             self._process = None
             self._owns_process = False
+        elif self._attached_existing_process:
+            self._terminate_attached_container()
+            self._attached_existing_process = False
 
     def _terminate_process_group(self) -> None:
         if self._process is None:
@@ -97,6 +108,43 @@ class LivePipelineRuntime:
             except ProcessLookupError:
                 return
             self._process.wait(timeout=2.0)
+
+    def _terminate_attached_container(self) -> None:
+        pattern = f"component_container_mt.*__node:={self.container_name}"
+        result = subprocess.run(
+            ["pgrep", "-f", pattern],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        pids = [int(line) for line in result.stdout.splitlines() if line.strip().isdigit()]
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            remaining = [
+                pid for pid in pids
+                if self._process_exists(pid)
+            ]
+            if not remaining:
+                return
+            time.sleep(0.05)
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    def _process_exists(self, pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
 
     def sync(self, desired: dict[str, dict[str, object]]) -> None:
         if not desired:
@@ -144,11 +192,14 @@ class LivePipelineRuntime:
             self._transition(response.full_node_name, Transition.TRANSITION_ACTIVATE)
             self.loaded[node_id].configured = True
 
-    def unload(self, node_id: str) -> None:
+    def unload(self, node_id: str, ensure_started: bool = True) -> None:
         loaded = self.loaded.pop(node_id, None)
         if loaded is None:
             return
-        self.start()
+        if ensure_started:
+            self.start()
+        if self._node is None:
+            return
         try:
             self._transition(loaded.full_node_name, Transition.TRANSITION_DEACTIVATE)
             self._transition(loaded.full_node_name, Transition.TRANSITION_CLEANUP)
@@ -163,9 +214,9 @@ class LivePipelineRuntime:
                 return
             raise RuntimeError(response.error_message or f"Failed to unload {node_id}")
 
-    def unload_all(self) -> None:
+    def unload_all(self, ensure_started: bool = True) -> None:
         for node_id in list(self.loaded):
-            self.unload(node_id)
+            self.unload(node_id, ensure_started=ensure_started)
 
     def reconfigure(self, node_id: str, parameters: dict[str, object]) -> None:
         loaded = self.loaded[node_id]
@@ -210,6 +261,21 @@ class LivePipelineRuntime:
         client = self._client(f"/{self.container_name}/_container/list_nodes", ListNodes)
         response = self._call(client, ListNodes.Request(), "list loaded nodes")
         return dict(zip(response.full_node_names, response.unique_ids, strict=False))
+
+    def _adopt_loaded_components(self) -> None:
+        client = self._node.create_client(ListNodes, f"/{self.container_name}/_container/list_nodes")
+        if not client.wait_for_service(timeout_sec=0.5):
+            return
+        response = self._call(client, ListNodes.Request(), "list loaded nodes")
+        for full_node_name, unique_id in zip(response.full_node_names, response.unique_ids, strict=False):
+            node_id = full_node_name.strip("/").rsplit("/", 1)[-1]
+            self.loaded[node_id] = LoadedComponent(
+                unique_id=unique_id,
+                full_node_name=full_node_name,
+                package="",
+                component_class="",
+                configured=False,
+            )
 
     def _is_missing_component_error(self, message: str) -> bool:
         lowered = message.lower()
