@@ -13,6 +13,7 @@ from python_qt_binding.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsLineItem,
@@ -381,7 +382,8 @@ class PipelineEditor(Plugin):
 
         save = QPushButton("Save")
         load = QPushButton("Load")
-        for button in (save, load):
+        refresh = QPushButton("Refresh")
+        for button in (save, load, refresh):
             side.addWidget(button)
 
         self.scene = QGraphicsScene()
@@ -403,11 +405,24 @@ class PipelineEditor(Plugin):
         self.filter_list.itemDoubleClicked.connect(lambda _item: self._add_filter())
         save.clicked.connect(self._save)
         load.clicked.connect(self._load)
+        refresh.clicked.connect(self._refresh_live_pipeline)
 
         context.add_widget(self.widget)
 
     def shutdown_plugin(self) -> None:
         self.live_runtime.stop()
+
+    def _refresh_live_pipeline(self) -> None:
+        try:
+            self.live_runtime.stop()
+            self.live_runtime = LivePipelineRuntime()
+            self.parameter_discovery = ComponentParameterDiscovery(self.live_runtime)
+            self.last_live_runtime_error = ""
+            self._sync_live_pipeline()
+        except Exception as error:
+            message = str(error)
+            self.status.setText(f"Live pipeline refresh failed: {message}")
+            QMessageBox.critical(self.widget, "Live Pipeline Refresh Failed", message)
 
     def theme_color(self, role: str) -> QColor:
         palette = self.widget.palette()
@@ -1031,17 +1046,17 @@ class PipelineEditor(Plugin):
     def begin_connection_drag(self, clicked_item, scene_pos: QPointF) -> bool:
         if clicked_item is None:
             return False
-        node_item = self._port_owner(clicked_item)
+        node_item = self._port_owner(clicked_item) or self._node_item_for_graphics_item(clicked_item)
         if node_item is None:
             return False
-        if clicked_item == node_item.output_port:
-            self.connection_source = node_item
-            self.connection_source_port = node_item.output_port_name(clicked_item)
-            node_item.setSelected(True)
-            self._set_connection_preview(node_item.output_anchor(self.connection_source_port), scene_pos)
-            self.status.setText(f"Connection start: {node_item.node.id}. Click a compatible input dot.")
-            return True
-        return False
+        if node_item.node.type == "filter" and not self.available_output_ports(node_item.node):
+            return False
+        self.connection_source = node_item
+        self.connection_source_port = node_item.output_port_name(clicked_item)
+        node_item.setSelected(True)
+        self._set_connection_preview(node_item.output_anchor(self.connection_source_port), scene_pos)
+        self.status.setText(f"Connection start: {node_item.node.id}. Drop on a compatible node.")
+        return True
 
     def update_connection_drag(self, scene_pos: QPointF) -> bool:
         if self.connection_source is None or self.connection_preview is None:
@@ -1127,8 +1142,11 @@ class PipelineEditor(Plugin):
         self._clear_connection_preview()
         self.connection_source = None
         self.connection_source_port = "out"
-        node_item = self._port_owner(clicked_item)
-        if node_item is None or clicked_item != node_item.input_port:
+        node_item = self._port_owner(clicked_item) or self._node_item_for_graphics_item(clicked_item)
+        if node_item is None:
+            self.status.setText("Connection canceled.")
+            return True
+        if node_item.node.type == "filter" and clicked_item != node_item.input_port and not self.available_input_ports(node_item.node):
             self.status.setText("Connection canceled.")
             return True
         self._connect_nodes(source, node_item, source_port, "in")
@@ -1374,7 +1392,13 @@ class PipelineEditor(Plugin):
         form = QFormLayout(page)
         configs = node.outputs if outgoing else node.inputs
         widgets: dict[str, dict[str, QLineEdit | QComboBox]] = {}
-        for port, stream_type, _label in self._port_options(node, outgoing):
+        options = self._port_options(node, outgoing)
+        for index, (port, stream_type, _label) in enumerate(options):
+            if index:
+                line = QFrame(dialog)
+                line.setFrameShape(QFrame.HLine)
+                line.setFrameShadow(QFrame.Sunken)
+                form.addRow(line)
             topic = self._connected_topic(node, port, outgoing)
             form.addRow(f"{port} type", self._readonly_field(stream_type or "unknown"))
             form.addRow(f"{port} topic", self._readonly_field(topic or "unconnected"))
@@ -1404,17 +1428,18 @@ class PipelineEditor(Plugin):
         return widgets
 
     def _connected_topic(self, node: Node, port: str, outgoing: bool) -> str:
+        nodes_by_id = {graph_node.id: graph_node for graph_node in self.graph.nodes}
         for edge in self.graph.edges:
             if outgoing and edge.source.node == node.id and self._canonical_output_port(node, edge.source.port) == port:
-                target = self.items_by_id.get(edge.target.node)
-                if target is not None and target.node.type == "topic":
-                    return target.node.topic
-                return edge.topic
+                target = nodes_by_id.get(edge.target.node)
+                if target is not None and target.type == "topic":
+                    return target.topic
+                continue
             if not outgoing and edge.target.node == node.id and self._canonical_input_port(node, edge.target.port) == port:
-                source = self.items_by_id.get(edge.source.node)
-                if source is not None and source.node.type == "topic":
-                    return source.node.topic
-                return edge.topic
+                source = nodes_by_id.get(edge.source.node)
+                if source is not None and source.type == "topic":
+                    return source.topic
+                continue
         return ""
 
     def _collect_port_qos(
@@ -1524,6 +1549,7 @@ class PipelineEditor(Plugin):
             desired = self._live_component_specs()
             self.graph.validate()
             self.live_runtime.sync(desired)
+            self._verify_live_pipeline_loaded(desired)
             if desired:
                 status = f"Live pipeline running with {len(desired)} component(s)."
                 if missing:
@@ -1536,6 +1562,19 @@ class PipelineEditor(Plugin):
             if message != self.last_live_runtime_error:
                 self.last_live_runtime_error = message
                 QMessageBox.critical(self.widget, "Live Pipeline Error", message)
+
+    def _verify_live_pipeline_loaded(self, desired: dict[str, dict[str, object]]) -> None:
+        actual = {name.strip("/").rsplit("/", 1)[-1] for name in self.live_runtime.loaded_components()}
+        expected = set(desired)
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        if missing or extra:
+            details = []
+            if missing:
+                details.append("Missing: " + ", ".join(missing))
+            if extra:
+                details.append("Extra: " + ", ".join(extra))
+            raise RuntimeError("Live container does not match the editor graph. " + "; ".join(details))
 
     def _live_component_specs(self) -> dict[str, dict[str, object]]:
         specs: dict[str, dict[str, object]] = {}
@@ -1642,7 +1681,11 @@ class PipelineEditor(Plugin):
         path, _ = QFileDialog.getOpenFileName(self.widget, "Load Pipeline", "", "YAML (*.yaml *.yml)")
         if not path:
             return
-        self.graph = load_graph(path)
+        try:
+            self.graph = load_graph(path)
+        except Exception as error:
+            QMessageBox.critical(self.widget, "Load Failed", str(error))
+            return
         orientation = self.graph.editor.get("orientation", "top_down")
         self.top_down_mode = orientation == "top_down"
         self.top_down_toggle.blockSignals(True)

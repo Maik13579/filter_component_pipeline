@@ -11,8 +11,8 @@ import time
 
 from composition_interfaces.srv import ListNodes
 from composition_interfaces.srv import LoadNode, UnloadNode
-from lifecycle_msgs.msg import Transition
-from lifecycle_msgs.srv import ChangeState
+from lifecycle_msgs.msg import State, Transition
+from lifecycle_msgs.srv import ChangeState, GetState
 import rclpy
 from rcl_interfaces.msg import Parameter as ParameterMsg
 from rcl_interfaces.srv import SetParameters
@@ -25,6 +25,7 @@ class LoadedComponent:
     full_node_name: str
     package: str
     component_class: str
+    parameters: dict[str, object]
     configured: bool = False
 
 
@@ -148,9 +149,12 @@ class LivePipelineRuntime:
 
     def sync(self, desired: dict[str, dict[str, object]]) -> None:
         if not desired:
+            self.start()
+            self._reconcile_loaded_components()
             self.unload_all()
             return
         self.start()
+        self._reconcile_loaded_components()
         for node_id in list(self.loaded):
             loaded = self.loaded[node_id]
             spec = desired.get(node_id)
@@ -163,10 +167,14 @@ class LivePipelineRuntime:
             configure = bool(spec.get("configure", True))
             if node_id not in self.loaded:
                 self.load(node_id, spec, configure=configure)
+            elif self._topic_parameters_changed(self.loaded[node_id].parameters, spec["parameters"]):
+                self.unload(node_id)
+                self.load(node_id, spec, configure=configure)
             elif configure:
                 self.reconfigure(node_id, spec["parameters"])
             else:
                 self.update_unconfigured(node_id, spec["parameters"])
+        self._reconcile_loaded_components()
 
     def load(self, node_id: str, spec: dict[str, object], configure: bool = True) -> None:
         self.start()
@@ -185,11 +193,11 @@ class LivePipelineRuntime:
             full_node_name=response.full_node_name,
             package=str(spec["package"]),
             component_class=str(spec["component_class"]),
+            parameters=dict(spec["parameters"]),
             configured=False,
         )
         if configure:
-            self._transition(response.full_node_name, Transition.TRANSITION_CONFIGURE)
-            self._transition(response.full_node_name, Transition.TRANSITION_ACTIVATE)
+            self._configure_and_activate(response.full_node_name)
             self.loaded[node_id].configured = True
 
     def unload(self, node_id: str, ensure_started: bool = True) -> None:
@@ -201,8 +209,7 @@ class LivePipelineRuntime:
         if self._node is None:
             return
         try:
-            self._transition(loaded.full_node_name, Transition.TRANSITION_DEACTIVATE)
-            self._transition(loaded.full_node_name, Transition.TRANSITION_CLEANUP)
+            self._make_unconfigured(loaded.full_node_name)
         except RuntimeError:
             pass
         client = self._client(f"/{self.container_name}/_container/unload_node", UnloadNode)
@@ -220,21 +227,25 @@ class LivePipelineRuntime:
 
     def reconfigure(self, node_id: str, parameters: dict[str, object]) -> None:
         loaded = self.loaded[node_id]
-        if loaded.configured:
-            self._transition(loaded.full_node_name, Transition.TRANSITION_DEACTIVATE)
-            self._transition(loaded.full_node_name, Transition.TRANSITION_CLEANUP)
+        self._make_unconfigured(loaded.full_node_name)
         self._set_parameters(loaded.full_node_name, parameters)
-        self._transition(loaded.full_node_name, Transition.TRANSITION_CONFIGURE)
-        self._transition(loaded.full_node_name, Transition.TRANSITION_ACTIVATE)
+        self._configure_and_activate(loaded.full_node_name)
+        loaded.parameters = dict(parameters)
         loaded.configured = True
 
     def update_unconfigured(self, node_id: str, parameters: dict[str, object]) -> None:
         loaded = self.loaded[node_id]
-        if loaded.configured:
-            self._transition(loaded.full_node_name, Transition.TRANSITION_DEACTIVATE)
-            self._transition(loaded.full_node_name, Transition.TRANSITION_CLEANUP)
-            loaded.configured = False
+        self._make_unconfigured(loaded.full_node_name)
+        loaded.configured = False
         self._set_parameters(loaded.full_node_name, parameters)
+        loaded.parameters = dict(parameters)
+
+    def _topic_parameters_changed(self, current: dict[str, object], desired: dict[str, object]) -> bool:
+        keys = {
+            key for key in set(current).union(desired)
+            if key.startswith(("inputs.", "outputs.")) and key.endswith(".topic")
+        }
+        return any(current.get(key) != desired.get(key) for key in keys)
 
     def _set_parameters(self, full_node_name: str, parameters: dict[str, object]) -> None:
         client = self._client(f"{full_node_name}/set_parameters", SetParameters)
@@ -251,7 +262,42 @@ class LivePipelineRuntime:
         request.transition.id = transition_id
         response = self._call(client, request, f"transition {full_node_name}")
         if not response.success:
-            raise RuntimeError(f"Lifecycle transition {transition_id} failed for {full_node_name}")
+            state = self._state_label(full_node_name)
+            raise RuntimeError(f"Lifecycle transition {transition_id} failed for {full_node_name} from {state}")
+
+    def _make_unconfigured(self, full_node_name: str) -> None:
+        state_id = self._state_id(full_node_name)
+        if state_id == State.PRIMARY_STATE_ACTIVE:
+            self._transition(full_node_name, Transition.TRANSITION_DEACTIVATE)
+            state_id = self._state_id(full_node_name)
+        if state_id == State.PRIMARY_STATE_INACTIVE:
+            self._transition(full_node_name, Transition.TRANSITION_CLEANUP)
+
+    def _configure_and_activate(self, full_node_name: str) -> None:
+        state_id = self._state_id(full_node_name)
+        if state_id == State.PRIMARY_STATE_ACTIVE:
+            return
+        if state_id == State.PRIMARY_STATE_UNCONFIGURED:
+            self._transition(full_node_name, Transition.TRANSITION_CONFIGURE)
+            state_id = self._state_id(full_node_name)
+        if state_id == State.PRIMARY_STATE_INACTIVE:
+            self._transition(full_node_name, Transition.TRANSITION_ACTIVATE)
+            return
+        if state_id != State.PRIMARY_STATE_ACTIVE:
+            raise RuntimeError(f"Cannot activate {full_node_name} from {self._state_label(full_node_name)}")
+
+    def _state_id(self, full_node_name: str) -> int:
+        client = self._client(f"{full_node_name}/get_state", GetState)
+        response = self._call(client, GetState.Request(), f"get lifecycle state for {full_node_name}")
+        return response.current_state.id
+
+    def _state_label(self, full_node_name: str) -> str:
+        try:
+            client = self._client(f"{full_node_name}/get_state", GetState)
+            response = self._call(client, GetState.Request(), f"get lifecycle state for {full_node_name}")
+            return f"{response.current_state.label} [{response.current_state.id}]"
+        except RuntimeError:
+            return "unknown"
 
     def _parameter_messages(self, parameters: dict[str, object]) -> list[ParameterMsg]:
         return [Parameter(name, value=value).to_parameter_msg() for name, value in parameters.items()]
@@ -267,13 +313,38 @@ class LivePipelineRuntime:
         if not client.wait_for_service(timeout_sec=0.5):
             return
         response = self._call(client, ListNodes.Request(), "list loaded nodes")
-        for full_node_name, unique_id in zip(response.full_node_names, response.unique_ids, strict=False):
+        self._merge_loaded_component_list(response.full_node_names, response.unique_ids)
+
+    def _reconcile_loaded_components(self) -> None:
+        if self._node is None:
+            return
+        client = self._node.create_client(ListNodes, f"/{self.container_name}/_container/list_nodes")
+        if not client.wait_for_service(timeout_sec=0.5):
+            return
+        response = self._call(client, ListNodes.Request(), "list loaded nodes")
+        actual_ids = {
+            full_node_name.strip("/").rsplit("/", 1)[-1]
+            for full_node_name in response.full_node_names
+        }
+        for node_id in list(self.loaded):
+            if node_id not in actual_ids:
+                self.loaded.pop(node_id, None)
+        self._merge_loaded_component_list(response.full_node_names, response.unique_ids)
+
+    def _merge_loaded_component_list(self, full_node_names: list[str], unique_ids: list[int]) -> None:
+        for full_node_name, unique_id in zip(full_node_names, unique_ids, strict=False):
             node_id = full_node_name.strip("/").rsplit("/", 1)[-1]
+            loaded = self.loaded.get(node_id)
+            if loaded is not None:
+                loaded.unique_id = unique_id
+                loaded.full_node_name = full_node_name
+                continue
             self.loaded[node_id] = LoadedComponent(
                 unique_id=unique_id,
                 full_node_name=full_node_name,
                 package="",
                 component_class="",
+                parameters={},
                 configured=False,
             )
 
