@@ -340,9 +340,8 @@ class PipelineEditor(Plugin):
         self.parameter_defaults_by_component: dict[str, dict[str, object]] = {}
         self.graph = Graph()
         self.last_live_runtime_error = ""
-        self.selected_logical_types = {
-            item.point_type for item in self.discovery.types if item.point_type
-        }
+        self.selected_logical_types = self._all_discovered_logical_types()
+        self.selected_packages = self._all_discovered_packages()
         self.message_type_by_logical: dict[str, str] = {}
         for item in self.discovery.types:
             if item.point_type and item.message_type and item.point_type not in self.message_type_by_logical:
@@ -367,11 +366,15 @@ class PipelineEditor(Plugin):
         side.addWidget(QLabel("Filters"))
         self.filter_search = QLineEdit()
         self.filter_search.setPlaceholderText("Search filters")
-        filter_row = QHBoxLayout()
-        filter_row.addWidget(self.filter_search, 1)
+        filter_control_row = QHBoxLayout()
         self.type_filter_button = QPushButton("Type Filter")
-        filter_row.addWidget(self.type_filter_button)
-        side.addLayout(filter_row)
+        self.package_filter_button = QPushButton("Package Filter")
+        self.clear_filter_button = QPushButton("Clear Filter")
+        filter_control_row.addWidget(self.type_filter_button)
+        filter_control_row.addWidget(self.package_filter_button)
+        filter_control_row.addWidget(self.clear_filter_button)
+        side.addLayout(filter_control_row)
+        side.addWidget(self.filter_search)
         self.filter_list = QListWidget()
         self.visible_filters: list[FilterExport] = []
         self._refresh_filter_list()
@@ -399,8 +402,11 @@ class PipelineEditor(Plugin):
         save = QPushButton("Save")
         load = QPushButton("Load")
         refresh = QPushButton("Refresh")
-        for button in (save, load, refresh):
-            side.addWidget(button)
+        save_load_row = QHBoxLayout()
+        save_load_row.addWidget(save)
+        save_load_row.addWidget(load)
+        side.addLayout(save_load_row)
+        side.addWidget(refresh)
 
         self.scene = QGraphicsScene()
         self.scene.setSceneRect(QRectF(-2000, -1200, 4000, 2400))
@@ -419,6 +425,8 @@ class PipelineEditor(Plugin):
         zoom_fit.clicked.connect(self.fit_graph_view)
         self.filter_search.textChanged.connect(self._refresh_filter_list)
         self.type_filter_button.clicked.connect(self._edit_type_filter)
+        self.package_filter_button.clicked.connect(self._edit_package_filter)
+        self.clear_filter_button.clicked.connect(self._clear_filters)
         self.filter_list.itemDoubleClicked.connect(lambda _item: self._add_filter())
         save.clicked.connect(self._save)
         load.clicked.connect(self._load)
@@ -544,6 +552,18 @@ class PipelineEditor(Plugin):
                 return item.point_type
         return self.discovery.types[0].point_type if self.discovery.types else ""
 
+    def _all_discovered_logical_types(self) -> set[str]:
+        return {
+            item.point_type
+            for item in self.discovery.types
+            if item.point_type
+        }
+
+    def _all_discovered_packages(self) -> set[str]:
+        packages = {export.package for export in self.discovery.filters}
+        packages.update(item.package for item in self.discovery.types if item.package)
+        return packages
+
     def _selected_filter(self) -> FilterExport | None:
         row = self.filter_list.currentRow()
         if row < 0 or row >= len(self.visible_filters):
@@ -556,6 +576,7 @@ class PipelineEditor(Plugin):
             export
             for export in self.discovery.filters
             if self._filter_matches_selected_types(export)
+            and self._filter_matches_selected_packages(export)
             and (
                 not query
                 or query in export.filter.lower()
@@ -577,6 +598,16 @@ class PipelineEditor(Plugin):
         types.update(self._stream_types(export.output_type))
         return bool(types.intersection(self.selected_logical_types))
 
+    def _filter_matches_selected_packages(self, export: FilterExport) -> bool:
+        return export.package in self.selected_packages
+
+    def _set_dialog_default_size(self, dialog: QDialog, width: int = 720, height: int | None = None) -> None:
+        dialog.setMinimumWidth(width)
+        if height is None:
+            dialog.resize(width, dialog.sizeHint().height())
+            return
+        dialog.resize(width, height)
+
     def _edit_type_filter(self) -> None:
         dialog = QDialog(self.widget)
         dialog.setWindowTitle("Type Filter")
@@ -596,11 +627,39 @@ class PipelineEditor(Plugin):
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
+        self._set_dialog_default_size(dialog)
         if dialog.exec_() == QDialog.Accepted:
             self.selected_logical_types = {
                 point_type for point_type, checkbox in widgets.items() if checkbox.isChecked()
             }
             self._refresh_filter_list()
+
+    def _edit_package_filter(self) -> None:
+        dialog = QDialog(self.widget)
+        dialog.setWindowTitle("Package Filter")
+        layout = QVBoxLayout(dialog)
+        widgets: dict[str, QCheckBox] = {}
+        for package in sorted(self._all_discovered_packages()):
+            checkbox = QCheckBox(package, dialog)
+            checkbox.setChecked(package in self.selected_packages)
+            widgets[package] = checkbox
+            layout.addWidget(checkbox)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        self._set_dialog_default_size(dialog)
+        if dialog.exec_() == QDialog.Accepted:
+            self.selected_packages = {
+                package for package, checkbox in widgets.items() if checkbox.isChecked()
+            }
+            self._refresh_filter_list()
+
+    def _clear_filters(self) -> None:
+        self.selected_logical_types = self._all_discovered_logical_types()
+        self.selected_packages = self._all_discovered_packages()
+        self.filter_search.clear()
+        self._refresh_filter_list()
 
     def _add_filter(self) -> None:
         export = self._selected_filter()
@@ -1317,6 +1376,7 @@ class PipelineEditor(Plugin):
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
+        self._set_dialog_default_size(dialog)
         if dialog.exec_() == QDialog.Accepted:
             try:
                 data = json.loads(editor.toPlainText())
@@ -1419,6 +1479,7 @@ class PipelineEditor(Plugin):
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
+        self._set_dialog_default_size(dialog)
         if dialog.exec_() == QDialog.Accepted:
             if node.type == "filter" and name_edit is not None:
                 if not self._rename_node(node, name_edit.text().strip()):
