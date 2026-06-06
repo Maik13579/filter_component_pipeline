@@ -46,30 +46,12 @@ COMMON_MULTI_INPUT_FILTERS = {
 }
 
 PACKAGE_FILTERS = {
-    "pcl_filter_xyz": ("XYZ", "PointXYZ", set()),
     "pcl_filter_xyzi": (
         "XYZI",
         "PointXYZI",
         {
             "IntensityThreshold",
             "IntensityRangeFilter",
-        },
-    ),
-    "pcl_filter_xyzrgb": (
-        "XYZRGB",
-        "PointXYZRGB",
-        {
-            "ColorThreshold",
-            "RGBRangeFilter",
-        },
-    ),
-    "pcl_filter_xyzrgba": (
-        "XYZRGBA",
-        "PointXYZRGBA",
-        {
-            "ColorThreshold",
-            "RGBRangeFilter",
-            "RGBAAlphaFilter",
         },
     ),
 }
@@ -94,19 +76,10 @@ def test_discovery_reads_filter_and_type_adapter_exports() -> None:
     assert voxel.component_class == "pcl_filter_xyzi::VoxelGridXYZIComponent"
 
     types = {(item.package, item.point_type): item for item in discovery.types}
-    assert types[("pcl_filter_xyz", "PointXYZ")].type_adapter == "pcl_filter_xyz::ros::PclCloudAdapterPointXYZ"
     assert types[("pcl_filter_xyzi", "PointXYZI")].message_type == "sensor_msgs/msg/PointCloud2"
     assert (
         types[("pcl_filter_xyzi", "PointXYZI")].type_adapter
         == "pcl_filter_xyzi::ros::PclCloudAdapterPointXYZI"
-    )
-    assert (
-        types[("pcl_filter_xyzrgb", "PointXYZRGB")].type_adapter
-        == "pcl_filter_xyzrgb::ros::PclCloudAdapterPointXYZRGB"
-    )
-    assert (
-        types[("pcl_filter_xyzrgba", "PointXYZRGBA")].type_adapter
-        == "pcl_filter_xyzrgba::ros::PclCloudAdapterPointXYZRGBA"
     )
     assert (
         types[("pcl_filter_type_adapters", "PointNormal")].type_adapter
@@ -158,7 +131,11 @@ def test_components_register_in_rclcpp_components_index() -> None:
     assert "pcl_filter_xyzi::VoxelGridXYZIComponent" in registered
     assert "pcl_filter_xyzi::PassThroughXYZIComponent" in registered
     assert "pcl_filter_xyzi::CropBoxXYZIComponent" in registered
-    assert "pcl_filter_xyzi::PointCloudMergerXYZIComponent" in registered
+    for filter_name in COMMON_SINGLE_INPUT_FILTERS | COMMON_MULTI_INPUT_FILTERS | {
+        "IntensityThreshold",
+        "IntensityRangeFilter",
+    }:
+        assert f"pcl_filter_xyzi::{filter_name}XYZIComponent" in registered
 
 
 def test_factory_installs_example_pipeline() -> None:

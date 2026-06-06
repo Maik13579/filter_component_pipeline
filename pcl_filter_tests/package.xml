@@ -13,13 +13,11 @@
   <exec_depend>pcl_filter_type_adapters</exec_depend>
   <exec_depend>pcl_filter_components</exec_depend>
   <exec_depend>pcl_filter_xyzi</exec_depend>
-  <exec_depend>pcl_filter_xyz</exec_depend>
-  <exec_depend>pcl_filter_xyzrgb</exec_depend>
-  <exec_depend>pcl_filter_xyzrgba</exec_depend>
   <exec_depend>pcl_filter_factory</exec_depend>
   <exec_depend>pcl_filter_editor</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
 
+  <test_depend>ament_cmake_gtest</test_depend>
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>python3-pytest</test_depend>
 
