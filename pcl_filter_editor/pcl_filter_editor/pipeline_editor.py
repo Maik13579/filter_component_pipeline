@@ -1888,6 +1888,7 @@ class PipelineEditor(Plugin):
             self.items_by_id[node.id] = item
             self.expand_scene_for_item(item)
         self._rebuild_edges()
+        self.fit_graph_view()
         self._sync_live_pipeline()
 
     def _rebuild_edges(self) -> None:
