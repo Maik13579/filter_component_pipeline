@@ -161,10 +161,10 @@ class NodeItem(QGraphicsRectItem):
         self.setPen(QPen(self.border_color, 1.5))
         if node.type == "topic":
             title = QGraphicsSimpleTextItem(title_text, self)
-            title.setPos(54, 10)
+            title.setPos(54, 14)
             title.setBrush(self.editor.theme_color("text"))
             subtitle = QGraphicsSimpleTextItem(subtitle_text, self)
-            subtitle.setPos(54, 34)
+            subtitle.setPos(54, 38)
             subtitle.setBrush(self.editor.theme_color("text"))
         else:
             for index, text in enumerate(row_texts):
@@ -253,7 +253,7 @@ class NodeItem(QGraphicsRectItem):
 
     def _filter_row_texts_for_node(self, node: Node) -> list[str]:
         return [
-            f"Name: {node.name or node.id or 'unknown'}",
+            node.name or node.id or "unknown",
             f"Type: {node.filter or 'filter'}",
             f"Package: {node.package or 'unknown'}",
         ]
@@ -598,9 +598,7 @@ class PipelineEditor(Plugin):
         }
 
     def _all_discovered_packages(self) -> set[str]:
-        packages = {export.package for export in self.discovery.filters}
-        packages.update(item.package for item in self.discovery.types if item.package)
-        return packages
+        return {export.package for export in self.discovery.filters}
 
     def _selected_filter(self) -> FilterExport | None:
         row = self.filter_list.currentRow()
@@ -646,6 +644,20 @@ class PipelineEditor(Plugin):
             return
         dialog.resize(width, height)
 
+    def _add_checkbox_selection_buttons(self, layout: QVBoxLayout, widgets: dict[str, QCheckBox]) -> None:
+        row = QHBoxLayout()
+        select_all = QPushButton("Select All")
+        deselect_all = QPushButton("Deselect All")
+        select_all.clicked.connect(lambda: self._set_checkboxes_checked(widgets, True))
+        deselect_all.clicked.connect(lambda: self._set_checkboxes_checked(widgets, False))
+        row.addWidget(select_all)
+        row.addWidget(deselect_all)
+        layout.addLayout(row)
+
+    def _set_checkboxes_checked(self, widgets: dict[str, QCheckBox], checked: bool) -> None:
+        for checkbox in widgets.values():
+            checkbox.setChecked(checked)
+
     def _edit_type_filter(self) -> None:
         dialog = QDialog(self.widget)
         dialog.setWindowTitle("Type Filter")
@@ -661,6 +673,7 @@ class PipelineEditor(Plugin):
             checkbox.setChecked(item.point_type in self.selected_logical_types)
             widgets[item.point_type] = checkbox
             layout.addWidget(checkbox)
+        self._add_checkbox_selection_buttons(layout, widgets)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
@@ -682,6 +695,7 @@ class PipelineEditor(Plugin):
             checkbox.setChecked(package in self.selected_packages)
             widgets[package] = checkbox
             layout.addWidget(checkbox)
+        self._add_checkbox_selection_buttons(layout, widgets)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
