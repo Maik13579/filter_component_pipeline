@@ -1510,22 +1510,13 @@ class PipelineEditor(Plugin):
         try:
             missing = self._missing_filter_ports()
             desired = self._live_component_specs()
-            if missing:
-                for spec in desired.values():
-                    spec["configure"] = False
-                self.live_runtime.sync(desired)
-                if desired:
-                    self.status.setText(
-                        f"Live pipeline loaded inactive with {len(desired)} component(s) until all ports are connected."
-                    )
-                else:
-                    self.status.setText("Add filters to load the live pipeline.")
-                self.last_live_runtime_error = ""
-                return
             self.graph.validate()
             self.live_runtime.sync(desired)
             if desired:
-                self.status.setText(f"Live pipeline running with {len(desired)} component(s).")
+                status = f"Live pipeline running with {len(desired)} component(s)."
+                if missing:
+                    status += " Save is blocked until all ports are connected."
+                self.status.setText(status)
             self.last_live_runtime_error = ""
         except Exception as error:
             message = str(error)
