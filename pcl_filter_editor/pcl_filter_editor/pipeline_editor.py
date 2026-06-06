@@ -44,6 +44,13 @@ from pcl_filter_editor.pipeline_graph import Edge, Graph, Node, PortRef, load_gr
 from pcl_filter_editor.runtime import LivePipelineRuntime
 
 
+ROS_MESSAGE_COMPATIBILITY = "ros_message"
+ROS_MESSAGE_COMPATIBILITY_WARNING = (
+    "Logical types differ. ROS message type matches, so this connection is allowed, "
+    "but zero-copy will not work."
+)
+
+
 class EdgeHandleItem(QGraphicsPolygonItem):
     def __init__(self, edge_item: "EdgeItem") -> None:
         size = 9.0
@@ -57,8 +64,9 @@ class EdgeHandleItem(QGraphicsPolygonItem):
         self.setFlag(QGraphicsItem.ItemIsMovable)
         self.setFlag(QGraphicsItem.ItemIsSelectable)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
-        self.setBrush(QBrush(edge_item.source.editor.accent_color("selected")))
-        self.setPen(QPen(edge_item.source.editor.accent_color("selected"), 1))
+        color = edge_item.source.editor.edge_color(edge_item.edge, selected=True)
+        self.setBrush(QBrush(color))
+        self.setPen(QPen(color, 1))
         self.setZValue(2)
 
     def itemChange(self, change, value):
@@ -77,15 +85,15 @@ class EdgeItem(QGraphicsLineItem):
         self.target = target
         self.setFlag(QGraphicsItem.ItemIsSelectable)
         self.setZValue(-1)
-        self.setPen(QPen(source.editor.accent_color("default"), 2))
+        self.setPen(QPen(source.editor.edge_color(edge), 2))
         self.arrow = QGraphicsPolygonItem(self)
-        self.arrow.setBrush(QBrush(source.editor.accent_color("default")))
-        self.arrow.setPen(QPen(source.editor.accent_color("default"), 1))
+        self.arrow.setBrush(QBrush(source.editor.edge_color(edge)))
+        self.arrow.setPen(QPen(source.editor.edge_color(edge), 1))
         self.refresh()
 
     def paint(self, painter, option, widget=None) -> None:
         width = 4 if self.isSelected() else 2
-        color = self.source.editor.accent_color("selected" if self.isSelected() else "default")
+        color = self.source.editor.edge_color(self.edge, selected=self.isSelected())
         self.setPen(QPen(color, width))
         self.arrow.setBrush(QBrush(color))
         self.arrow.setPen(QPen(color, 1))
@@ -334,6 +342,10 @@ class PipelineEditor(Plugin):
         self.selected_logical_types = {
             item.point_type for item in self.discovery.types if item.point_type
         }
+        self.message_type_by_logical: dict[str, str] = {}
+        for item in self.discovery.types:
+            if item.point_type and item.message_type and item.point_type not in self.message_type_by_logical:
+                self.message_type_by_logical[item.point_type] = item.message_type
         self.items_by_id: dict[str, NodeItem] = {}
         self.edge_items: list[EdgeItem] = []
         self.connection_source: NodeItem | None = None
@@ -376,8 +388,10 @@ class PipelineEditor(Plugin):
         zoom_out = QPushButton("-")
         zoom_in = QPushButton("+")
         zoom_reset = QPushButton("Reset")
+        zoom_fit = QPushButton("Fit")
         zoom_row.addWidget(zoom_out)
         zoom_row.addWidget(zoom_reset)
+        zoom_row.addWidget(zoom_fit)
         zoom_row.addWidget(zoom_in)
         side.addLayout(zoom_row)
 
@@ -401,6 +415,7 @@ class PipelineEditor(Plugin):
         zoom_out.clicked.connect(lambda: self.zoom_canvas(1.0 / 1.2))
         zoom_in.clicked.connect(lambda: self.zoom_canvas(1.2))
         zoom_reset.clicked.connect(self.reset_zoom)
+        zoom_fit.clicked.connect(self.fit_graph_view)
         self.filter_search.textChanged.connect(self._refresh_filter_list)
         self.type_filter_button.clicked.connect(self._edit_type_filter)
         self.filter_list.itemDoubleClicked.connect(lambda _item: self._add_filter())
@@ -441,6 +456,11 @@ class PipelineEditor(Plugin):
             return QColor("#ff9f1c")
         return QColor("#2d7ff9")
 
+    def edge_color(self, edge: Edge, selected: bool = False) -> QColor:
+        if edge.compatibility == ROS_MESSAGE_COMPATIBILITY:
+            return QColor("#c62828" if selected else "#d32f2f")
+        return self.accent_color("selected" if selected else "default")
+
     def node_fill(self, node_type: str) -> QColor:
         base = self.theme_color("button")
         highlight = self.theme_color("highlight")
@@ -465,6 +485,16 @@ class PipelineEditor(Plugin):
 
     def reset_zoom(self) -> None:
         self.view.resetTransform()
+
+    def fit_graph_view(self) -> None:
+        if not self.scene.items():
+            return
+        margin = 80.0
+        rect = self.scene.itemsBoundingRect().adjusted(-margin, -margin, margin, margin)
+        if rect.isEmpty():
+            return
+        self.scene.setSceneRect(self.scene.sceneRect().united(rect))
+        self.view.fitInView(rect, Qt.KeepAspectRatio)
 
     def expand_scene_for_item(self, item: QGraphicsItem) -> None:
         margin = 1200.0
@@ -662,6 +692,21 @@ class PipelineEditor(Plugin):
             return self._type_for_port(node.output_type or node.input_type, port, outgoing)
         return self._type_for_port(node.output_type if outgoing else node.input_type, port, outgoing)
 
+    def _connection_compatibility(self, source_type: str, target_type: str) -> str:
+        if not source_type or not target_type or source_type == target_type:
+            return "exact"
+        source_message = self.message_type_by_logical.get(source_type, "")
+        target_message = self.message_type_by_logical.get(target_type, "")
+        if source_message and source_message == target_message:
+            return ROS_MESSAGE_COMPATIBILITY
+        return "invalid"
+
+    def _types_are_connectable(self, source_type: str, target_type: str) -> bool:
+        return self._connection_compatibility(source_type, target_type) != "invalid"
+
+    def _warn_ros_message_compatibility(self) -> None:
+        QMessageBox.warning(self.widget, "ROS Message Compatibility", ROS_MESSAGE_COMPATIBILITY_WARNING)
+
     def _stream_types(self, value: str) -> list[str]:
         return [item.strip() for item in value.replace(";", ",").split(",") if item.strip()]
 
@@ -771,7 +816,11 @@ class PipelineEditor(Plugin):
             return options[0][0] if len(self._port_options(source.node, True)) > 1 else source_port
         target_type = self._edge_type(target.node, False, target_port)
         if target_type:
-            matches = [port for port, stream_type, _label in options if stream_type == target_type]
+            matches = [
+                port
+                for port, stream_type, _label in options
+                if self._types_are_connectable(stream_type, target_type)
+            ]
             if len(matches) == 1:
                 return matches[0]
             if not matches:
@@ -827,7 +876,7 @@ class PipelineEditor(Plugin):
         matches = [
             (port, label)
             for port, stream_type, label in options
-            if (not source_type or stream_type == source_type) and port not in occupied
+            if self._types_are_connectable(source_type, stream_type) and port not in occupied
         ]
         if len(matches) == 1:
             return matches[0][0]
@@ -892,19 +941,22 @@ class PipelineEditor(Plugin):
             return
         source_type = self._edge_type(source.node, True, source_port)
         target_type = self._edge_type(target.node, False, target_port)
-        if source_type and target_type and source_type != target_type:
-            QMessageBox.warning(
-                self.widget,
-                "Type Mismatch",
-                f"{source.node.id} produces {source_type}, but {target.node.id} expects {target_type}.",
-            )
-            return
         if source.node.type == "topic":
             source.node.output_type = source.node.output_type or target_type
             source.node.input_type = source.node.input_type or target_type
         if target.node.type == "topic":
             target.node.output_type = target.node.output_type or source_type
             target.node.input_type = target.node.input_type or source_type
+        source_type = self._edge_type(source.node, True, source_port)
+        target_type = self._edge_type(target.node, False, target_port)
+        compatibility = self._connection_compatibility(source_type, target_type)
+        if compatibility == "invalid":
+            QMessageBox.warning(
+                self.widget,
+                "Type Mismatch",
+                f"{source.node.id} produces {source_type}, but {target.node.id} expects {target_type}.",
+            )
+            return
         for edge in self.graph.edges:
             if (
                 edge.source.node == source.node.id
@@ -916,11 +968,14 @@ class PipelineEditor(Plugin):
         edge = Edge(
             PortRef(source.node.id, source_port),
             PortRef(target.node.id, target_port),
+            compatibility=ROS_MESSAGE_COMPATIBILITY if compatibility == ROS_MESSAGE_COMPATIBILITY else "",
         )
         self.graph.edges.append(edge)
         self._add_edge_item(edge, source, target)
         self._refresh_port_visibility()
         self.status.setText(f"Connected {source.node.id} -> {target.node.id}")
+        if compatibility == ROS_MESSAGE_COMPATIBILITY:
+            self._warn_ros_message_compatibility()
         self._sync_live_pipeline()
 
     def _create_topic_between(
@@ -1042,7 +1097,7 @@ class PipelineEditor(Plugin):
                 existing_type = self._edge_type(source.node, True, edge.source.port)
             if not existing_type and target is not None:
                 existing_type = self._edge_type(target.node, False, edge.target.port)
-            if existing_type and topic_type and existing_type != topic_type:
+            if existing_type and topic_type and not self._types_are_connectable(existing_type, topic_type):
                 return False
         return True
 
@@ -1121,20 +1176,25 @@ class PipelineEditor(Plugin):
         if source.node.type == "topic":
             expected = self._edge_type(target.node, False, edge_item.edge.target.port)
             actual = self._edge_type(topic_item.node, True)
-            if expected and actual and expected != actual:
+            compatibility = self._connection_compatibility(actual, expected)
+            if compatibility == "invalid":
                 QMessageBox.warning(self.widget, "Type Mismatch", f"{topic_item.node.id} is {actual}, expected {expected}.")
                 return True
             edge_item.edge.source.node = topic_item.node.id
         else:
             expected = self._edge_type(source.node, True, edge_item.edge.source.port)
             actual = self._edge_type(topic_item.node, False)
-            if expected and actual and expected != actual:
+            compatibility = self._connection_compatibility(expected, actual)
+            if compatibility == "invalid":
                 QMessageBox.warning(self.widget, "Type Mismatch", f"{topic_item.node.id} is {actual}, expected {expected}.")
                 return True
             edge_item.edge.target.node = topic_item.node.id
+        edge_item.edge.compatibility = ROS_MESSAGE_COMPATIBILITY if compatibility == ROS_MESSAGE_COMPATIBILITY else ""
         self._rebuild_edges()
         self._refresh_port_visibility()
         self.status.setText(f"Rewired to {topic_item.node.id}")
+        if compatibility == ROS_MESSAGE_COMPATIBILITY:
+            self._warn_ros_message_compatibility()
         self._sync_live_pipeline()
         return True
 
@@ -1556,7 +1616,7 @@ class PipelineEditor(Plugin):
         try:
             missing = self._missing_filter_ports()
             desired = self._live_component_specs()
-            self.graph.validate()
+            self.graph.validate(message_type_by_logical=self.message_type_by_logical)
             self.live_runtime.sync(desired)
             self._verify_live_pipeline_loaded(desired)
             if desired:
@@ -1680,6 +1740,7 @@ class PipelineEditor(Plugin):
                 path = f"{path}.yaml"
             try:
                 self._refresh_live_filter_parameters_for_save()
+                self.graph.validate(message_type_by_logical=self.message_type_by_logical)
                 save_graph(self.graph, path)
             except ValueError as error:
                 QMessageBox.critical(self.widget, "Invalid Graph", str(error))

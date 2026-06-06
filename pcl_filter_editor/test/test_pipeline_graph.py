@@ -61,6 +61,7 @@ def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
     assert "name: VoxelGridXYZI_1" in path.read_text(encoding="utf-8")
     assert "inputs:" in path.read_text(encoding="utf-8")
     assert "outputs:" in path.read_text(encoding="utf-8")
+    assert "compatibility:" not in path.read_text(encoding="utf-8")
     assert "transient_local" in path.read_text(encoding="utf-8")
     assert "qos:\n      depth: 7" not in path.read_text(encoding="utf-8")
     loaded = load_graph(str(path))
@@ -105,6 +106,83 @@ def test_graph_load_ignores_old_edge_qos() -> None:
     )
 
     assert loaded.edges[0].qos == {}
+
+
+def test_graph_round_trip_preserves_ros_message_compatibility(tmp_path: Path) -> None:
+    graph = Graph(
+        nodes=[
+            Node(id="/points", type="topic", topic="/points", input_type="PointXYZ", output_type="PointXYZ"),
+            Node(
+                id="VoxelGridXYZI_1",
+                name="VoxelGridXYZI_1",
+                type="filter",
+                package="pcl_filter_xyzi",
+                filter="VoxelGridXYZI",
+                input_type="PointXYZI",
+                output_type="PointXYZI",
+            ),
+        ],
+        edges=[Edge(PortRef("/points", "out"), PortRef("VoxelGridXYZI_1", "in"), compatibility="ros_message")],
+    )
+    path = tmp_path / "pipeline.yaml"
+
+    save_graph(graph, str(path))
+    text = path.read_text(encoding="utf-8")
+    loaded = load_graph(str(path))
+
+    assert "compatibility: ros_message" in text
+    assert loaded.edges[0].compatibility == "ros_message"
+
+
+def test_graph_accepts_marked_ros_message_compatible_type_mismatch() -> None:
+    graph = Graph(
+        nodes=[
+            Node(id="/points", type="topic", topic="/points", input_type="PointXYZ", output_type="PointXYZ"),
+            Node(
+                id="VoxelGridXYZI_1",
+                name="VoxelGridXYZI_1",
+                type="filter",
+                package="pcl_filter_xyzi",
+                filter="VoxelGridXYZI",
+                input_type="PointXYZI",
+                output_type="PointXYZI",
+            ),
+        ],
+        edges=[Edge(PortRef("/points"), PortRef("VoxelGridXYZI_1"), compatibility="ros_message")],
+    )
+
+    graph.validate(
+        message_type_by_logical={
+            "PointXYZ": "sensor_msgs/msg/PointCloud2",
+            "PointXYZI": "sensor_msgs/msg/PointCloud2",
+        }
+    )
+
+
+def test_graph_rejects_marked_ros_message_type_mismatch_when_ros_types_differ() -> None:
+    graph = Graph(
+        nodes=[
+            Node(id="/indices", type="topic", topic="/indices", input_type="PointIndices", output_type="PointIndices"),
+            Node(
+                id="VoxelGridXYZI_1",
+                name="VoxelGridXYZI_1",
+                type="filter",
+                package="pcl_filter_xyzi",
+                filter="VoxelGridXYZI",
+                input_type="PointXYZI",
+                output_type="PointXYZI",
+            ),
+        ],
+        edges=[Edge(PortRef("/indices"), PortRef("VoxelGridXYZI_1"), compatibility="ros_message")],
+    )
+
+    with pytest.raises(ValueError, match="type mismatch"):
+        graph.validate(
+            message_type_by_logical={
+                "PointIndices": "pcl_msgs/msg/PointIndices",
+                "PointXYZI": "sensor_msgs/msg/PointCloud2",
+            }
+        )
 
 
 def test_graph_rejects_incompatible_custom_types() -> None:

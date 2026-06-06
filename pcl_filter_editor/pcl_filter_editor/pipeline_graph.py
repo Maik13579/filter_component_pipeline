@@ -26,6 +26,7 @@ class Edge:
     topic: str = ""
     qos: dict[str, Any] = field(default_factory=dict)
     position: dict[str, float] = field(default_factory=dict)
+    compatibility: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {"from": self.source.to_dict(), "to": self.target.to_dict()}
@@ -33,6 +34,8 @@ class Edge:
             data["topic"] = self.topic
         if self.position:
             data["position"] = self.position
+        if self.compatibility == "ros_message":
+            data["compatibility"] = self.compatibility
         return data
 
 
@@ -87,7 +90,11 @@ class Graph:
     nodes: list[Node] = field(default_factory=list)
     edges: list[Edge] = field(default_factory=list)
 
-    def validate(self, type_by_node: dict[str, str] | None = None) -> None:
+    def validate(
+        self,
+        type_by_node: dict[str, str] | None = None,
+        message_type_by_logical: dict[str, str] | None = None,
+    ) -> None:
         ids: set[str] = set()
         nodes_by_id: dict[str, Node] = {}
         for node in self.nodes:
@@ -107,6 +114,8 @@ class Graph:
                 raise ValueError(f"topic node {node.id} has no type")
 
         for edge in self.edges:
+            if edge.compatibility and edge.compatibility != "ros_message":
+                raise ValueError(f"unsupported edge compatibility {edge.compatibility}")
             if edge.source.node not in ids:
                 raise ValueError(f"edge source {edge.source.node} does not exist")
             if edge.target.node not in ids:
@@ -119,6 +128,16 @@ class Graph:
                 source_type = type_by_node.get(edge.source.node, source_type)
                 target_type = type_by_node.get(edge.target.node, target_type)
             if source_type and target_type and source_type != target_type:
+                if edge.compatibility == "ros_message":
+                    if message_type_by_logical is not None:
+                        source_message = message_type_by_logical.get(source_type, "")
+                        target_message = message_type_by_logical.get(target_type, "")
+                        if not source_message or source_message != target_message:
+                            raise ValueError(
+                                f"type mismatch: {edge.source.node} produces {source_type}, "
+                                f"{edge.target.node} expects {target_type}"
+                            )
+                    continue
                 raise ValueError(
                     f"type mismatch: {edge.source.node} produces {source_type}, "
                     f"{edge.target.node} expects {target_type}"
@@ -190,6 +209,7 @@ def graph_from_dict(data: dict[str, Any]) -> Graph:
                 item.get("topic", ""),
                 {},
                 item.get("position", {}) or {},
+                item.get("compatibility", ""),
             )
         )
     graph.validate()
