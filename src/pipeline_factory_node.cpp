@@ -235,6 +235,9 @@ std::string PipelineFactoryNode::inputTopicForNode(const std::string & node_id) 
     if (source->type == "input") {
       return source->topic;
     }
+    if (source->type == "topic") {
+      return source->topic;
+    }
     return edge.topic.empty() ? "/pcl_pipeline/" + edge.from.node + "_to_" + edge.to.node : edge.topic;
   }
   return {};
@@ -251,6 +254,9 @@ std::string PipelineFactoryNode::outputTopicForNode(const std::string & node_id)
       continue;
     }
     if (target->type == "output") {
+      return target->topic;
+    }
+    if (target->type == "topic") {
       return target->topic;
     }
     return edge.topic.empty() ? "/pcl_pipeline/" + edge.from.node + "_to_" + edge.to.node : edge.topic;

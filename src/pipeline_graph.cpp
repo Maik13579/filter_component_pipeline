@@ -118,6 +118,11 @@ PipelineGraph loadPipelineGraph(const std::string & path)
     edge.from = parsePort(item["from"]);
     edge.to = parsePort(item["to"]);
     edge.topic = optionalString(item, "topic");
+    edge.qos = stringMap(item["qos"]);
+    if (item["position"] && item["position"].IsMap()) {
+      edge.x = item["position"]["x"] ? item["position"]["x"].as<double>() : 0.0;
+      edge.y = item["position"]["y"] ? item["position"]["y"].as<double>() : 0.0;
+    }
     graph.edges.push_back(std::move(edge));
   }
 
@@ -132,6 +137,7 @@ void validatePipelineGraph(const PipelineGraph & graph)
   }
 
   std::set<std::string> ids;
+  std::set<std::string> topic_names;
   for (const auto & node : graph.nodes) {
     if (node.id.empty()) {
       throw std::runtime_error("Pipeline node id must not be empty");
@@ -139,14 +145,23 @@ void validatePipelineGraph(const PipelineGraph & graph)
     if (!ids.insert(node.id).second) {
       throw std::runtime_error("Duplicate pipeline node id '" + node.id + "'");
     }
-    if (node.type != "input" && node.type != "filter" && node.type != "output") {
+    if (
+      node.type != "input" && node.type != "filter" && node.type != "topic" &&
+      node.type != "output")
+    {
       throw std::runtime_error("Unsupported node type '" + node.type + "' on node '" + node.id + "'");
     }
     if (node.type == "filter" && node.component_class.empty()) {
       throw std::runtime_error("Filter node '" + node.id + "' has no component class");
     }
-    if ((node.type == "input" || node.type == "output") && node.topic.empty()) {
+    if ((node.type == "input" || node.type == "topic" || node.type == "output") && node.topic.empty()) {
       throw std::runtime_error("Pseudo node '" + node.id + "' must declare a topic");
+    }
+    if (node.type == "topic" && node.input_type.empty() && node.output_type.empty()) {
+      throw std::runtime_error("Topic node '" + node.id + "' must declare a type");
+    }
+    if (node.type == "topic" && !topic_names.insert(node.topic).second) {
+      throw std::runtime_error("Duplicate topic node name '" + node.topic + "'");
     }
   }
 

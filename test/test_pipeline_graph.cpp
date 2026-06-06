@@ -38,34 +38,45 @@ nodes:
     optional_output_type: PointIndices
     parameters:
       filter.leaf_size_x: 0.1
-    qos:
-      depth: 5
     sync:
       policy: ExactTime
   - id: output_1
     type: output
     topic: /filtered
     input_type: PointXYZI
+  - id: topic_1
+    type: topic
+    topic: /pcl_pipeline/voxel_to_output
+    input_type: PointXYZI
+    output_type: PointXYZI
+    qos:
+      depth: 7
+      reliability: reliable
+    position: {x: 120.0, y: 80.0}
 edges:
   - from: {node: input_1, port: out}
     to: {node: voxel_1, port: in}
   - from: {node: voxel_1, port: out}
+    to: {node: topic_1, port: in}
+  - from: {node: topic_1, port: out}
     to: {node: output_1, port: in}
-    topic: /pcl_pipeline/voxel_to_output
 )");
 
   const auto graph = pcl_filter_components::pipeline::loadPipelineGraph(path);
 
-  ASSERT_EQ(graph.nodes.size(), 3U);
+  ASSERT_EQ(graph.nodes.size(), 4U);
   EXPECT_EQ(graph.nodes[1].component_class, "pcl_filter_components::VoxelGridXYZIComponent");
   EXPECT_EQ(graph.nodes[1].input_type, "PointXYZI");
   EXPECT_EQ(graph.nodes[1].output_type, "PointXYZI");
   EXPECT_EQ(graph.nodes[1].optional_output_type, "PointIndices");
   EXPECT_EQ(graph.nodes[1].parameters.at("filter.leaf_size_x"), "0.1");
-  EXPECT_EQ(graph.nodes[1].qos.at("depth"), "5");
   EXPECT_EQ(graph.nodes[1].sync.at("policy"), "ExactTime");
-  ASSERT_EQ(graph.edges.size(), 2U);
-  EXPECT_EQ(graph.edges[1].topic, "/pcl_pipeline/voxel_to_output");
+  EXPECT_EQ(graph.nodes[3].topic, "/pcl_pipeline/voxel_to_output");
+  EXPECT_EQ(graph.nodes[3].qos.at("depth"), "7");
+  EXPECT_EQ(graph.nodes[3].qos.at("reliability"), "reliable");
+  EXPECT_DOUBLE_EQ(graph.nodes[3].x, 120.0);
+  EXPECT_DOUBLE_EQ(graph.nodes[3].y, 80.0);
+  ASSERT_EQ(graph.edges.size(), 3U);
 }
 
 TEST(PipelineGraph, RejectsTypeIncompatibleEdges)
@@ -86,6 +97,29 @@ nodes:
 edges:
   - from: {node: input_1}
     to: {node: voxel_1}
+)");
+
+  EXPECT_THROW(
+    (void)pcl_filter_components::pipeline::loadPipelineGraph(path),
+    std::runtime_error);
+}
+
+TEST(PipelineGraph, RejectsDuplicateTopicNodes)
+{
+  const auto path = writeTempPipeline(R"(
+version: 1
+nodes:
+  - id: topic_1
+    type: topic
+    topic: /duplicate
+    input_type: PointXYZI
+    output_type: PointXYZI
+  - id: topic_2
+    type: topic
+    topic: /duplicate
+    input_type: PointXYZI
+    output_type: PointXYZI
+edges: []
 )");
 
   EXPECT_THROW(

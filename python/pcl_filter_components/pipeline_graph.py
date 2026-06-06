@@ -24,11 +24,17 @@ class Edge:
     source: PortRef
     target: PortRef
     topic: str = ""
+    qos: dict[str, Any] = field(default_factory=dict)
+    position: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {"from": self.source.to_dict(), "to": self.target.to_dict()}
         if self.topic:
             data["topic"] = self.topic
+        if self.qos:
+            data["qos"] = self.qos
+        if self.position:
+            data["position"] = self.position
         return data
 
 
@@ -76,6 +82,7 @@ class Node:
 @dataclass
 class Graph:
     version: int = 1
+    editor: dict[str, Any] = field(default_factory=dict)
     nodes: list[Node] = field(default_factory=list)
     edges: list[Edge] = field(default_factory=list)
 
@@ -87,12 +94,14 @@ class Graph:
             if node.id in ids:
                 raise ValueError(f"duplicate node id {node.id}")
             ids.add(node.id)
-            if node.type not in {"input", "filter", "output"}:
+            if node.type not in {"input", "filter", "topic", "output"}:
                 raise ValueError(f"unsupported node type {node.type}")
             if node.type == "filter" and not (node.component_class or (node.package and node.filter)):
                 raise ValueError(f"filter node {node.id} has no component identity")
-            if node.type in {"input", "output"} and not node.topic:
+            if node.type in {"input", "topic", "output"} and not node.topic:
                 raise ValueError(f"{node.type} node {node.id} has no topic")
+            if node.type == "topic" and not (node.input_type or node.output_type):
+                raise ValueError(f"topic node {node.id} has no type")
 
         for edge in self.edges:
             if edge.source.node not in ids:
@@ -109,10 +118,14 @@ class Graph:
                         f"type mismatch: {edge.source.node} produces {source_type}, "
                         f"{edge.target.node} expects {target_type}"
                     )
+        topic_names = [node.topic for node in self.nodes if node.type == "topic" and node.topic]
+        if len(topic_names) != len(set(topic_names)):
+            raise ValueError("topic node names must be unique")
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "version": self.version,
+            "editor": self.editor,
             "nodes": [node.to_dict() for node in self.nodes],
             "edges": [edge.to_dict() for edge in self.edges],
         }
@@ -120,6 +133,7 @@ class Graph:
 
 def graph_from_dict(data: dict[str, Any]) -> Graph:
     graph = Graph(version=int(data.get("version", 1)))
+    graph.editor = data.get("editor", {}) or {}
     for item in data.get("nodes", []):
         graph.nodes.append(
             Node(
@@ -144,6 +158,8 @@ def graph_from_dict(data: dict[str, Any]) -> Graph:
                 PortRef(item["from"]["node"], item["from"].get("port", "")),
                 PortRef(item["to"]["node"], item["to"].get("port", "")),
                 item.get("topic", ""),
+                item.get("qos", {}) or {},
+                item.get("position", {}) or {},
             )
         )
     graph.validate()
