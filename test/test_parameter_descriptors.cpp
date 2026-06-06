@@ -13,6 +13,7 @@
 
 #include "pcl_filter_components/ros/crop_box_component.hpp"
 #include "pcl_filter_components/ros/passthrough_component.hpp"
+#include "pcl_filter_components/ros/point_cloud_merger_component.hpp"
 #include "pcl_filter_components/ros/voxel_grid_component.hpp"
 
 namespace
@@ -176,6 +177,32 @@ TEST(ParameterDescriptors, CropBoxXYZIParametersExposeEditorMetadata)
   EXPECT_DOUBLE_EQ(node->get_parameter("filter.max_y").as_double(), 10.0);
   EXPECT_DOUBLE_EQ(node->get_parameter("filter.max_z").as_double(), 3.0);
   EXPECT_FALSE(node->get_parameter("filter.invert").as_bool());
+
+  node.reset();
+  context->shutdown("test complete");
+}
+
+TEST(ParameterDescriptors, PointCloudMergerXYZIParametersExposeEditorMetadata)
+{
+  using Component = pcl_filter_components::ros::PointCloudMergerComponent<pcl::PointXYZI>;
+
+  auto context = std::make_shared<rclcpp::Context>();
+  auto node = makeComponent<Component>(context);
+
+  expectDeclaredWithDescription(
+    *node,
+    {
+      "input_topic_a",
+      "input_topic_b",
+      "output_topic",
+      "queue_size",
+    });
+  expectIntegerRange(*node, "queue_size");
+
+  EXPECT_EQ(node->get_parameter("input_topic_a").as_string(), "/points/input_a");
+  EXPECT_EQ(node->get_parameter("input_topic_b").as_string(), "/points/input_b");
+  EXPECT_EQ(node->get_parameter("output_topic").as_string(), "/points/output");
+  EXPECT_EQ(node->get_parameter("queue_size").as_int(), 5);
 
   node.reset();
   context->shutdown("test complete");

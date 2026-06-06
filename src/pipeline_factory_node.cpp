@@ -62,6 +62,34 @@ std::string packageFromComponentClass(const std::string & component_class)
   return component_class.substr(0, delimiter);
 }
 
+size_t inputIndexForPort(const std::string & port, size_t fallback)
+{
+  if (port.rfind("input_", 0) == 0) {
+    try {
+      const auto value = std::stoul(port.substr(6));
+      if (value > 0U) {
+        return value - 1U;
+      }
+    } catch (const std::exception &) {
+    }
+  }
+  return fallback;
+}
+
+std::string inputParameterName(size_t index, size_t count)
+{
+  if (count <= 1U) {
+    return "input_topic";
+  }
+  if (index == 0U) {
+    return "input_topic_a";
+  }
+  if (index == 1U) {
+    return "input_topic_b";
+  }
+  return "input_topic_" + std::to_string(index + 1U);
+}
+
 }  // namespace
 
 PipelineFactoryNode::PipelineFactoryNode(
@@ -71,6 +99,7 @@ PipelineFactoryNode::PipelineFactoryNode(
   executor_(std::move(executor))
 {
   this->declare_parameter<std::string>("pipeline_file", "");
+  this->declare_parameter<int>("executor_threads", 0);
   auto manager_options = options;
   manager_options.use_intra_process_comms(true);
   manager_options.start_parameter_services(false);
@@ -209,9 +238,13 @@ std::vector<rclcpp::Parameter> PipelineFactoryNode::parametersForNode(const Pipe
     parameters.push_back(parameterFromString(name, value));
   }
 
-  const auto input_topic = inputTopicForNode(node.id);
-  if (!input_topic.empty()) {
-    parameters.push_back(rclcpp::Parameter{"input_topic", input_topic});
+  const auto input_topics = inputTopicsForNode(node.id);
+  for (size_t index = 0; index < input_topics.size(); ++index) {
+    if (!input_topics[index].empty()) {
+      parameters.push_back(rclcpp::Parameter{
+          inputParameterName(index, input_topics.size()),
+          input_topics[index]});
+    }
   }
 
   const auto output_topic = outputTopicForNode(node.id);
@@ -222,8 +255,9 @@ std::vector<rclcpp::Parameter> PipelineFactoryNode::parametersForNode(const Pipe
   return parameters;
 }
 
-std::string PipelineFactoryNode::inputTopicForNode(const std::string & node_id) const
+std::vector<std::string> PipelineFactoryNode::inputTopicsForNode(const std::string & node_id) const
 {
+  std::vector<std::string> topics;
   for (const auto & edge : graph_.edges) {
     if (edge.to.node != node_id) {
       continue;
@@ -232,15 +266,16 @@ std::string PipelineFactoryNode::inputTopicForNode(const std::string & node_id) 
     if (source == nullptr) {
       continue;
     }
-    if (source->type == "input") {
-      return source->topic;
+    const auto topic = source->type == "topic" ?
+      source->topic :
+      (edge.topic.empty() ? "~/" + edge.from.node + "-" + edge.to.node : edge.topic);
+    const auto index = inputIndexForPort(edge.to.port, topics.size());
+    if (topics.size() <= index) {
+      topics.resize(index + 1U);
     }
-    if (source->type == "topic") {
-      return source->topic;
-    }
-    return edge.topic.empty() ? "~/" + edge.from.node + "-" + edge.to.node : edge.topic;
+    topics[index] = topic;
   }
-  return {};
+  return topics;
 }
 
 std::string PipelineFactoryNode::outputTopicForNode(const std::string & node_id) const
@@ -252,9 +287,6 @@ std::string PipelineFactoryNode::outputTopicForNode(const std::string & node_id)
     const auto * target = findNode(graph_, edge.to.node);
     if (target == nullptr) {
       continue;
-    }
-    if (target->type == "output") {
-      return target->topic;
     }
     if (target->type == "topic") {
       return target->topic;

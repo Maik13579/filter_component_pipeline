@@ -15,7 +15,6 @@ class FilterExport:
     component_class: str
     input_type: str = ""
     output_type: str = ""
-    optional_output_type: str = ""
 
 
 @dataclass(frozen=True)
@@ -56,7 +55,7 @@ def discover_filters() -> DiscoveryResult:
 
         registered_components = _component_classes(package, prefix)
         package_filters: list[str] = []
-        filter_types: dict[str, tuple[str, str, str]] = {}
+        filter_types: dict[str, tuple[str, str]] = {}
         for export in root.findall("export"):
             for item in export.findall("pcl_filter_component"):
                 point_type = item.attrib.get("type", "")
@@ -75,14 +74,13 @@ def discover_filters() -> DiscoveryResult:
                     filter_types[filter_name] = (
                         item.attrib.get("input", ""),
                         item.attrib.get("output", ""),
-                        item.attrib.get("optional_output", ""),
                     )
 
         for filter_name in package_filters:
             component_class = f"{package}::{filter_name}Component"
             if component_class not in registered_components:
                 continue
-            input_type, output_type, optional_output_type = filter_types[filter_name]
+            input_type, output_type = filter_types[filter_name]
             result.filters.append(
                 FilterExport(
                     package=package,
@@ -90,7 +88,6 @@ def discover_filters() -> DiscoveryResult:
                     component_class=component_class,
                     input_type=input_type,
                     output_type=output_type,
-                    optional_output_type=optional_output_type,
                 )
             )
     return result

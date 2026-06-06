@@ -44,7 +44,7 @@ private:
   void loadPipeline();
   void unloadPipeline();
   std::vector<rclcpp::Parameter> parametersForNode(const PipelineNode & node) const;
-  std::string inputTopicForNode(const std::string & node_id) const;
+  std::vector<std::string> inputTopicsForNode(const std::string & node_id) const;
   std::string outputTopicForNode(const std::string & node_id) const;
 
   std::weak_ptr<rclcpp::Executor> executor_;

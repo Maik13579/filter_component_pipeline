@@ -26,6 +26,7 @@ add_library(${PROJECT_NAME}_components SHARED
   src/voxel_grid_xyzi_component.cpp
   src/passthrough_xyzi_component.cpp
   src/crop_box_xyzi_component.cpp
+  src/point_cloud_merger_xyzi_component.cpp
 )
 target_include_directories(${PROJECT_NAME}_components PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -48,6 +49,7 @@ rclcpp_components_register_nodes(${PROJECT_NAME}_components
   "pcl_filter_components::VoxelGridXYZIComponent"
   "pcl_filter_components::PassThroughXYZIComponent"
   "pcl_filter_components::CropBoxXYZIComponent"
+  "pcl_filter_components::PointCloudMergerXYZIComponent"
 )
 
 add_library(${PROJECT_NAME}_pipeline SHARED

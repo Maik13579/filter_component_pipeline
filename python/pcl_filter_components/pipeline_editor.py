@@ -135,7 +135,7 @@ class NodeItem(QGraphicsRectItem):
         title = QGraphicsSimpleTextItem(node.topic if node.type == "topic" else node.name or node.id, self)
         title.setPos(54 if node.type == "topic" else 8, 10 if node.type == "topic" else 6)
         title.setBrush(self.editor.theme_color("text"))
-        type_label = node.output_type or node.input_type if node.type == "topic" else node.filter if node.type == "filter" else node.type
+        type_label = node.output_type or node.input_type if node.type == "topic" else node.filter if node.type == "filter" else ""
         subtitle = QGraphicsSimpleTextItem(type_label, self)
         subtitle.setPos(54 if node.type == "topic" else 8, 34 if node.type == "topic" else 28)
         subtitle.setBrush(self.editor.theme_color("text"))
@@ -150,11 +150,6 @@ class NodeItem(QGraphicsRectItem):
         self.output_port = QGraphicsEllipseItem(output_pos.x(), output_pos.y(), 12, 12, self)
         self.input_port.setBrush(self.editor.theme_color("text"))
         self.output_port.setBrush(self.editor.theme_color("text"))
-        self.optional_output_port = None
-        if node.type == "input":
-            self.input_port.setVisible(False)
-        elif node.type == "output":
-            self.output_port.setVisible(False)
 
     def paint(self, painter, option, widget=None) -> None:
         if self.isSelected():
@@ -181,6 +176,7 @@ class NodeItem(QGraphicsRectItem):
     def itemChange(self, change, value):
         result = super().itemChange(change, value)
         if change == QGraphicsItem.ItemPositionHasChanged:
+            self.editor.expand_scene_for_item(self)
             self.editor.refresh_edges()
         return result
 
@@ -188,8 +184,6 @@ class NodeItem(QGraphicsRectItem):
         return self.input_port.sceneBoundingRect().center()
 
     def output_anchor(self, port: str = "out") -> QPointF:
-        if port in {"indices", "optional_output"} and self.optional_output_port is not None:
-            return self.optional_output_port.sceneBoundingRect().center()
         return self.output_port.sceneBoundingRect().center()
 
     def _port_positions(self) -> tuple[QPointF, QPointF]:
@@ -203,21 +197,12 @@ class NodeItem(QGraphicsRectItem):
             return QPointF(0, 28), QPointF(40, 28)
         return QPointF(-6, 28), QPointF(width - 6, 28)
 
-    def _optional_output_port_position(self) -> QPointF:
-        return self._port_positions()[1]
-
     def output_port_name(self, item) -> str:
         return "out"
 
     def _port_label(self) -> str:
-        if self.node.type == "input":
-            return f"out: {self.node.output_type or '?'}"
         if self.node.type == "topic":
             return f"topic: {self.node.output_type or self.node.input_type or '?'}"
-        if self.node.type == "output":
-            return f"in: {self.node.input_type or '?'}"
-        if self.node.optional_output_type:
-            return f"out: {self.node.output_type or '?'} / indices: {self.node.optional_output_type}"
         return f"{self.node.input_type or '?'} -> {self.node.output_type or '?'}"
 
 
@@ -230,6 +215,8 @@ class PipelineView(QGraphicsView):
 
     def mouseDoubleClickEvent(self, event) -> None:
         item = self.itemAt(event.pos())
+        if self.editor.create_topic_from_port(item):
+            return
         while item is not None and not isinstance(item, (NodeItem, EdgeItem, EdgeHandleItem)):
             item = item.parentItem()
         if isinstance(item, NodeItem):
@@ -270,6 +257,12 @@ class PipelineView(QGraphicsView):
         if event.button() == Qt.LeftButton and self.editor.finish_edge_rewire(self.itemAt(event.pos())):
             return
         super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event) -> None:
+        if event.angleDelta().y() > 0:
+            self.editor.zoom_canvas(1.15)
+        else:
+            self.editor.zoom_canvas(1.0 / 1.15)
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key_Delete:
@@ -324,7 +317,7 @@ class PipelineEditor(Plugin):
         self.filter_list = QListWidget()
         self.visible_filters: list[FilterExport] = []
         self._refresh_filter_list()
-        side.addWidget(self.filter_list)
+        side.addWidget(self.filter_list, 1)
 
         self.status = QLabel("Double-click a filter to add it. Drag output dot to input dot to connect.")
         self.status.setWordWrap(True)
@@ -334,14 +327,19 @@ class PipelineEditor(Plugin):
         self.top_down_toggle.setChecked(self.top_down_mode)
         side.addWidget(self.top_down_toggle)
 
-        add_input = QPushButton("Add Input") if self.discovery.types else None
-        add_output = QPushButton("Add Output") if self.discovery.types else None
+        zoom_row = QHBoxLayout()
+        zoom_out = QPushButton("-")
+        zoom_in = QPushButton("+")
+        zoom_reset = QPushButton("Reset")
+        zoom_row.addWidget(zoom_out)
+        zoom_row.addWidget(zoom_reset)
+        zoom_row.addWidget(zoom_in)
+        side.addLayout(zoom_row)
+
         save = QPushButton("Save")
         load = QPushButton("Load")
-        for button in (add_input, add_output, save, load):
-            if button is not None:
-                side.addWidget(button)
-        side.addStretch(1)
+        for button in (save, load):
+            side.addWidget(button)
 
         self.scene = QGraphicsScene()
         self.scene.setSceneRect(QRectF(-2000, -1200, 4000, 2400))
@@ -353,11 +351,10 @@ class PipelineEditor(Plugin):
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([260, 900])
 
-        if add_input is not None:
-            add_input.clicked.connect(self._add_input)
-        if add_output is not None:
-            add_output.clicked.connect(self._add_output)
         self.top_down_toggle.toggled.connect(self._set_top_down_mode)
+        zoom_out.clicked.connect(lambda: self.zoom_canvas(1.0 / 1.2))
+        zoom_in.clicked.connect(lambda: self.zoom_canvas(1.2))
+        zoom_reset.clicked.connect(self.reset_zoom)
         self.filter_search.textChanged.connect(self._refresh_filter_list)
         self.filter_list.itemDoubleClicked.connect(lambda _item: self._add_filter())
         save.clicked.connect(self._save)
@@ -387,18 +384,6 @@ class PipelineEditor(Plugin):
     def node_fill(self, node_type: str) -> QColor:
         base = self.theme_color("button")
         highlight = self.theme_color("highlight")
-        if node_type == "input":
-            return QColor(
-                (base.red() * 3 + highlight.red()) // 4,
-                (base.green() * 3 + highlight.green()) // 4,
-                (base.blue() * 3 + highlight.blue()) // 4,
-            )
-        if node_type == "output":
-            return QColor(
-                (base.red() * 2 + highlight.red() * 2) // 4,
-                (base.green() * 2 + highlight.green() * 2) // 4,
-                (base.blue() * 2 + highlight.blue() * 2) // 4,
-            )
         if node_type == "topic":
             return highlight.lighter(112) if highlight.lightness() < 128 else highlight.darker(112)
         return base
@@ -411,6 +396,22 @@ class PipelineEditor(Plugin):
             (fill.green() * 2 + highlight.green()) // 3,
             (fill.blue() * 2 + highlight.blue()) // 3,
         )
+
+    def zoom_canvas(self, factor: float) -> None:
+        current = self.view.transform().m11()
+        next_scale = max(0.15, min(4.0, current * factor))
+        factor = next_scale / current if current else 1.0
+        self.view.scale(factor, factor)
+
+    def reset_zoom(self) -> None:
+        self.view.resetTransform()
+
+    def expand_scene_for_item(self, item: QGraphicsItem) -> None:
+        margin = 1200.0
+        rect = self.scene.sceneRect()
+        item_rect = item.sceneBoundingRect().adjusted(-margin, -margin, margin, margin)
+        if not rect.contains(item_rect):
+            self.scene.setSceneRect(rect.united(item_rect))
 
     def _new_id(self, prefix: str) -> str:
         index = 1
@@ -428,44 +429,13 @@ class PipelineEditor(Plugin):
         item.setPos(node.position["x"], node.position["y"])
         self.scene.addItem(item)
         self.items_by_id[node.id] = item
+        self.expand_scene_for_item(item)
 
     def _set_top_down_mode(self, enabled: bool) -> None:
         self.top_down_mode = enabled
         for item in list(self.items_by_id.values()):
             self._redraw_node(item)
         self.refresh_edges()
-
-    def _add_input(self) -> None:
-        topic, ok = QInputDialog.getText(self.widget, "Input Topic", "Topic")
-        topic = topic.strip()
-        if ok and topic:
-            stream_type = self._choose_stream_type("Input Type")
-            if not stream_type:
-                return
-            self._add_node(
-                Node(
-                    id=topic,
-                    type="input",
-                    topic=topic,
-                    output_type=stream_type,
-                )
-            )
-
-    def _add_output(self) -> None:
-        topic, ok = QInputDialog.getText(self.widget, "Output Topic", "Topic")
-        topic = topic.strip()
-        if ok and topic:
-            stream_type = self._choose_stream_type("Output Type")
-            if not stream_type:
-                return
-            self._add_node(
-                Node(
-                    id=topic,
-                    type="output",
-                    topic=topic,
-                    input_type=stream_type,
-                )
-            )
 
     def _choose_stream_type(self, title: str) -> str:
         types = [item.point_type for item in self.discovery.types if item.point_type]
@@ -523,7 +493,6 @@ class PipelineEditor(Plugin):
                 component_class=export.component_class,
                 input_type=export.input_type,
                 output_type=export.output_type,
-                optional_output_type=export.optional_output_type,
                 parameters=self._default_parameters(export.filter),
                 position={"x": x, "y": y},
             )
@@ -590,18 +559,41 @@ class PipelineEditor(Plugin):
 
     def _edge_type(self, node: Node, outgoing: bool, port: str = "") -> str:
         if node.type == "topic":
-            return node.output_type or node.input_type
-        if outgoing:
-            if port in {"indices", "optional_output"}:
-                return node.optional_output_type
-            return node.output_type
-        return node.input_type
+            return self._type_for_port(node.output_type or node.input_type, port, outgoing)
+        return self._type_for_port(node.output_type if outgoing else node.input_type, port, outgoing)
 
-    def _output_port_options(self, node: Node) -> list[tuple[str, str, str]]:
-        options = [("out", node.output_type, f"cloud ({node.output_type or 'unknown'})")]
-        if node.optional_output_type:
-            options.append(("indices", node.optional_output_type, f"indices ({node.optional_output_type})"))
-        return [(port, stream_type, label) for port, stream_type, label in options if stream_type]
+    def _stream_types(self, value: str) -> list[str]:
+        return [item.strip() for item in value.replace(";", ",").split(",") if item.strip()]
+
+    def _port_name_for_type(self, stream_type: str, index: int, total: int, outgoing: bool) -> str:
+        if total > 1 and not outgoing:
+            return f"input_{index + 1}"
+        if stream_type == "PointIndices":
+            return "indices"
+        if stream_type.startswith("Point"):
+            name = stream_type[5:].lower()
+            return name or ("out" if outgoing else "in")
+        return stream_type.replace("/", "_").replace(":", "_").lower() or ("out" if outgoing else "in")
+
+    def _type_for_port(self, value: str, port: str, outgoing: bool) -> str:
+        types = self._stream_types(value)
+        if not types:
+            return ""
+        if not port or port in {"in", "out"}:
+            return types[0]
+        for index, stream_type in enumerate(types):
+            if port in {stream_type, self._port_name_for_type(stream_type, index, len(types), outgoing)}:
+                return stream_type
+        return types[0] if outgoing else ""
+
+    def _port_options(self, node: Node, outgoing: bool) -> list[tuple[str, str, str]]:
+        types = self._stream_types(node.output_type if outgoing else node.input_type)
+        options: list[tuple[str, str, str]] = []
+        for index, stream_type in enumerate(types):
+            port = self._port_name_for_type(stream_type, index, len(types), outgoing)
+            label = f"{port} ({stream_type})"
+            options.append((port, stream_type, label))
+        return options
 
     def _resolve_source_port(
         self,
@@ -610,9 +602,11 @@ class PipelineEditor(Plugin):
         source_port: str,
         target_port: str,
     ) -> str | None:
-        if source.node.type != "filter" or source_port != "out" or not source.node.optional_output_type:
+        if source.node.type != "filter" or source_port != "out":
             return source_port
-        options = self._output_port_options(source.node)
+        options = self._port_options(source.node, True)
+        if len(options) <= 1:
+            return source_port
         target_type = self._edge_type(target.node, False, target_port)
         if target_type:
             matches = [port for port, stream_type, _label in options if stream_type == target_type]
@@ -629,10 +623,47 @@ class PipelineEditor(Plugin):
                 return port
         return None
 
+    def _resolve_source_port_for_new_topic(self, source: NodeItem, source_port: str) -> str | None:
+        if source.node.type != "filter" or source_port != "out":
+            return source_port
+        options = self._port_options(source.node, True)
+        if len(options) <= 1:
+            return source_port
+        labels = [label for _port, _stream_type, label in options]
+        label, ok = QInputDialog.getItem(self.widget, "Select Output", "Output", labels, 0, False)
+        if not ok:
+            return None
+        for port, _stream_type, option_label in options:
+            if option_label == label:
+                return port
+        return None
+
+    def _resolve_target_port(self, source: NodeItem, target: NodeItem, source_port: str, target_port: str) -> str | None:
+        if target.node.type != "filter" or target_port != "in":
+            return target_port
+        options = self._port_options(target.node, False)
+        if len(options) <= 1:
+            return target_port
+        source_type = self._edge_type(source.node, True, source_port)
+        matches = [(port, label) for port, stream_type, label in options if not source_type or stream_type == source_type]
+        if len(matches) == 1:
+            return matches[0][0]
+        if not matches:
+            return target_port
+        label, ok = QInputDialog.getItem(self.widget, "Select Input", "Input", [label for _port, label in matches], 0, False)
+        if not ok:
+            return None
+        for port, option_label in matches:
+            if option_label == label:
+                return port
+        return None
+
     def _ordered_connection(self, selected: list[NodeItem]) -> tuple[NodeItem, NodeItem]:
         first, second = selected
-        if first.node.type == "output" or second.node.type == "input":
-            return second, first
+        if first.node.type == "topic" and second.node.type == "filter":
+            return first, second
+        if first.node.type == "filter" and second.node.type == "topic":
+            return first, second
         return first, second
 
     def connect_selected(self) -> None:
@@ -650,18 +681,20 @@ class PipelineEditor(Plugin):
         source_port: str = "out",
         target_port: str = "in",
     ) -> None:
-        if source.node.type == "output" or target.node.type == "input":
-            QMessageBox.warning(self.widget, "Connect", "Connect from input/filter to filter/output.")
-            return
         resolved_source_port = self._resolve_source_port(source, target, source_port, target_port)
         if resolved_source_port is None:
             self.status.setText("Connection canceled.")
             return
         source_port = resolved_source_port
+        resolved_target_port = self._resolve_target_port(source, target, source_port, target_port)
+        if resolved_target_port is None:
+            self.status.setText("Connection canceled.")
+            return
+        target_port = resolved_target_port
         if source.node.type != "topic" and target.node.type != "topic":
             topic = self._create_topic_between(source, target, source_port, target_port)
             self._connect_nodes(source, topic, source_port, "in")
-            self._connect_nodes(topic, target)
+            self._connect_nodes(topic, target, "out", target_port)
             return
         if source.node.type == "topic" and target.node.type == "topic":
             QMessageBox.warning(self.widget, "Connect", "Connect through one topic node.")
@@ -732,6 +765,54 @@ class PipelineEditor(Plugin):
         )
         return self.items_by_id[topic_name]
 
+    def _create_topic_for_port(self, item: NodeItem, outgoing: bool, port: str) -> NodeItem:
+        topic_type = self._edge_type(item.node, outgoing, port)
+        direction = "out" if outgoing else "in"
+        topic_name = self._unique_topic(f"~/{self._topic_name_part(item.node)}-{direction}")
+        x = float(item.pos().x())
+        y = float(item.pos().y())
+        if self.top_down_mode:
+            y += 120.0 if outgoing else -120.0
+        else:
+            x += 280.0 if outgoing else -280.0
+        self._add_node(
+            Node(
+                id=topic_name,
+                type="topic",
+                topic=topic_name,
+                input_type=topic_type,
+                output_type=topic_type,
+                qos={"reliability": "best_effort", "history": "keep_last", "depth": 5},
+                position={"x": x, "y": y},
+            )
+        )
+        return self.items_by_id[topic_name]
+
+    def create_topic_from_port(self, clicked_item) -> bool:
+        node_item = self._port_owner(clicked_item)
+        if node_item is None:
+            return False
+        if node_item.node.type != "filter":
+            return False
+        if clicked_item == node_item.output_port:
+            source_port = node_item.output_port_name(clicked_item)
+            source_port = self._resolve_source_port_for_new_topic(node_item, source_port)
+            if source_port is None:
+                self.status.setText("Topic creation canceled.")
+                return True
+            topic = self._create_topic_for_port(node_item, True, source_port)
+            self._connect_nodes(node_item, topic, source_port, "in")
+            return True
+        if clicked_item == node_item.input_port:
+            topic = self._create_topic_for_port(node_item, False, "in")
+            target_port = self._resolve_target_port(topic, node_item, "out", "in")
+            if target_port is None:
+                self.status.setText("Topic creation canceled.")
+                return True
+            self._connect_nodes(topic, node_item, "out", target_port)
+            return True
+        return False
+
     def _port_owner(self, item) -> NodeItem | None:
         if item is None:
             return None
@@ -781,10 +862,7 @@ class PipelineEditor(Plugin):
         node_item = self._port_owner(clicked_item)
         if node_item is None:
             return False
-        if clicked_item == node_item.output_port or clicked_item == node_item.optional_output_port:
-            if node_item.node.type == "output":
-                self.status.setText("Output nodes cannot start connections.")
-                return True
+        if clicked_item == node_item.output_port:
             self.connection_source = node_item
             self.connection_source_port = node_item.output_port_name(clicked_item)
             node_item.setSelected(True)
@@ -999,8 +1077,11 @@ class PipelineEditor(Plugin):
             name_edit = QLineEdit(node.name or node.id, dialog)
             general_form.addRow("Name", name_edit)
             general_form.addRow("Filter", self._readonly_field(f"{node.package}/{node.filter}"))
-            general_form.addRow("Input type", self._readonly_field(node.input_type or "unknown"))
-            general_form.addRow("Output type", self._readonly_field(node.output_type or "unknown"))
+            general_form.addRow("Inputs", self._readonly_field(self._port_summary([node.input_type])))
+            general_form.addRow(
+                "Outputs",
+                self._readonly_field(self._port_summary([node.output_type])),
+            )
             tabs.addTab(general, "General")
             parameters = QWidget(dialog)
             parameters_form = QFormLayout(parameters)
@@ -1039,9 +1120,7 @@ class PipelineEditor(Plugin):
             form = QFormLayout(dialog)
             topic_edit = QLineEdit(node.topic, dialog)
             form.addRow("Topic", topic_edit)
-            topic_type = node.output_type if node.type == "input" else node.input_type
-            if node.type == "topic":
-                topic_type = node.output_type or node.input_type
+            topic_type = node.output_type or node.input_type
             form.addRow("Topic type", self._readonly_field(topic_type or "unknown"))
             if node.type == "topic":
                 form.addRow(QLabel("QoS", dialog))
@@ -1094,6 +1173,15 @@ class PipelineEditor(Plugin):
         field = QLineEdit(text, self.widget)
         field.setReadOnly(True)
         return field
+
+    def _port_summary(self, values: list[str]) -> str:
+        ports: list[str] = []
+        for value in values:
+            for item in value.replace(";", ",").split(","):
+                item = item.strip()
+                if item:
+                    ports.append(item)
+        return ", ".join(dict.fromkeys(ports)) or "unknown"
 
     def _filter_has_multiple_inputs(self, node: Node) -> bool:
         return "," in node.input_type or ";" in node.input_type
@@ -1155,14 +1243,6 @@ class PipelineEditor(Plugin):
             data = {"name": node.name or node.id, "node_type": node.type}
         else:
             data = {"node_type": node.type}
-        if node.type == "input":
-            data["topic"] = node.topic
-            data["topic_type"] = node.output_type
-            return data
-        if node.type == "output":
-            data["topic"] = node.topic
-            data["topic_type"] = node.input_type
-            return data
         if node.type == "topic":
             data["topic"] = node.topic
             data["topic_type"] = node.output_type or node.input_type
@@ -1205,7 +1285,7 @@ class PipelineEditor(Plugin):
         if not path:
             return
         self.graph = load_graph(path)
-        orientation = self.graph.editor.get("orientation", "left_right")
+        orientation = self.graph.editor.get("orientation", "top_down")
         self.top_down_mode = orientation == "top_down"
         self.top_down_toggle.blockSignals(True)
         self.top_down_toggle.setChecked(self.top_down_mode)
@@ -1218,6 +1298,7 @@ class PipelineEditor(Plugin):
             item.setPos(node.position["x"], node.position["y"])
             self.scene.addItem(item)
             self.items_by_id[node.id] = item
+            self.expand_scene_for_item(item)
         self._rebuild_edges()
 
     def _rebuild_edges(self) -> None:

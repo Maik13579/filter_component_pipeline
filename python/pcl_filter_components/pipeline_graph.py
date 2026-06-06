@@ -48,7 +48,6 @@ class Node:
     component_class: str = ""
     input_type: str = ""
     output_type: str = ""
-    optional_output_type: str = ""
     topic: str = ""
     parameters: dict[str, Any] = field(default_factory=dict)
     qos: dict[str, Any] = field(default_factory=dict)
@@ -69,7 +68,6 @@ class Node:
             "component_class",
             "input_type",
             "output_type",
-            "optional_output_type",
             "topic",
         ):
             value = getattr(self, key)
@@ -99,12 +97,12 @@ class Graph:
                 raise ValueError(f"duplicate node id {node.id}")
             ids.add(node.id)
             nodes_by_id[node.id] = node
-            if node.type not in {"input", "filter", "topic", "output"}:
+            if node.type not in {"filter", "topic"}:
                 raise ValueError(f"unsupported node type {node.type}")
             if node.type == "filter" and not (node.component_class or (node.package and node.filter)):
                 raise ValueError(f"filter node {node.id} has no component identity")
-            if node.type in {"input", "topic", "output"} and not node.topic:
-                raise ValueError(f"{node.type} node {node.id} has no topic")
+            if node.type == "topic" and not node.topic:
+                raise ValueError(f"topic node {node.id} has no topic")
             if node.type == "topic" and not (node.input_type or node.output_type):
                 raise ValueError(f"topic node {node.id} has no type")
 
@@ -125,19 +123,15 @@ class Graph:
                     f"type mismatch: {edge.source.node} produces {source_type}, "
                     f"{edge.target.node} expects {target_type}"
                 )
-        topic_names = [
-            node.topic for node in self.nodes if node.type in {"input", "topic", "output"} and node.topic
-        ]
+        topic_names = [node.topic for node in self.nodes if node.type == "topic" and node.topic]
         if len(topic_names) != len(set(topic_names)):
             raise ValueError("topic names must be unique")
 
     @staticmethod
     def _node_type(node: Node, outgoing: bool, port: str = "") -> str:
         if node.type == "topic":
-            return node.output_type or node.input_type
-        if outgoing and port in {"indices", "optional_output"}:
-            return node.optional_output_type
-        return node.output_type if outgoing else node.input_type
+            return _type_for_port(node.output_type or node.input_type, port, outgoing)
+        return _type_for_port(node.output_type if outgoing else node.input_type, port, outgoing)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -164,7 +158,6 @@ def graph_from_dict(data: dict[str, Any]) -> Graph:
                 component_class=item.get("component_class", ""),
                 input_type=item.get("input_type", ""),
                 output_type=item.get("output_type", ""),
-                optional_output_type=item.get("optional_output_type", ""),
                 topic=item.get("topic", ""),
                 parameters=item.get("parameters", {}) or {},
                 qos=item.get("qos", {}) or {},
@@ -195,3 +188,29 @@ def save_graph(graph: Graph, path: str) -> None:
     graph.validate()
     with open(path, "w", encoding="utf-8") as stream:
         yaml.safe_dump(graph.to_dict(), stream, sort_keys=False)
+
+
+def _split_types(value: str) -> list[str]:
+    return [item.strip() for item in value.replace(";", ",").split(",") if item.strip()]
+
+
+def _port_name_for_type(stream_type: str, index: int, total: int, outgoing: bool) -> str:
+    if total > 1 and not outgoing:
+        return f"input_{index + 1}"
+    if stream_type == "PointIndices":
+        return "indices"
+    if stream_type.startswith("Point"):
+        return stream_type[5:].lower() or "out"
+    return stream_type.replace("/", "_").replace(":", "_").lower() or "out"
+
+
+def _type_for_port(value: str, port: str, outgoing: bool) -> str:
+    types = _split_types(value)
+    if not types:
+        return ""
+    if not port or port in {"in", "out"}:
+        return types[0]
+    for index, stream_type in enumerate(types):
+        if port == stream_type or port == _port_name_for_type(stream_type, index, len(types), outgoing):
+            return stream_type
+    return types[0] if outgoing else ""

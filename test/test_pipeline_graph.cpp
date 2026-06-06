@@ -24,8 +24,9 @@ TEST(PipelineGraph, LoadsGraphAndPreservesTypes)
   const auto path = writeTempPipeline(R"(
 version: 1
 nodes:
-  - type: input
+  - type: topic
     topic: /points
+    input_type: PointXYZI
     output_type: PointXYZI
     position: {x: 1.0, y: 2.0}
   - type: filter
@@ -33,15 +34,15 @@ nodes:
     package: pcl_filter_components
     filter: VoxelGridXYZI
     input_type: PointXYZI
-    output_type: PointXYZI
-    optional_output_type: PointIndices
+    output_type: PointXYZI,PointIndices
     parameters:
       filter.leaf_size_x: 0.1
     sync:
       policy: ExactTime
-  - type: output
+  - type: topic
     topic: /filtered
     input_type: PointXYZI
+    output_type: PointXYZI
   - type: topic
     topic: /pcl_pipeline/voxel_to_output
     input_type: PointXYZI
@@ -64,8 +65,7 @@ edges:
   ASSERT_EQ(graph.nodes.size(), 4U);
   EXPECT_EQ(graph.nodes[1].component_class, "pcl_filter_components::VoxelGridXYZIComponent");
   EXPECT_EQ(graph.nodes[1].input_type, "PointXYZI");
-  EXPECT_EQ(graph.nodes[1].output_type, "PointXYZI");
-  EXPECT_EQ(graph.nodes[1].optional_output_type, "PointIndices");
+  EXPECT_EQ(graph.nodes[1].output_type, "PointXYZI,PointIndices");
   EXPECT_EQ(graph.nodes[1].parameters.at("filter.leaf_size_x"), "0.1");
   EXPECT_EQ(graph.nodes[1].sync.at("policy"), "ExactTime");
   EXPECT_EQ(graph.nodes[3].topic, "/pcl_pipeline/voxel_to_output");
@@ -81,8 +81,9 @@ TEST(PipelineGraph, RejectsTypeIncompatibleEdges)
   const auto path = writeTempPipeline(R"(
 version: 1
 nodes:
-  - type: input
+  - type: topic
     topic: /indices
+    input_type: PointIndices
     output_type: PointIndices
   - type: filter
     name: VoxelGridXYZI_1
@@ -100,7 +101,7 @@ edges:
     std::runtime_error);
 }
 
-TEST(PipelineGraph, AcceptsOptionalIndicesOutputPort)
+TEST(PipelineGraph, AcceptsIndicesOutputPort)
 {
   const auto path = writeTempPipeline(R"(
 version: 1
@@ -109,8 +110,7 @@ nodes:
     name: VoxelGridXYZI_1
     package: pcl_filter_components
     filter: VoxelGridXYZI
-    output_type: PointXYZI
-    optional_output_type: PointIndices
+    output_type: PointXYZI,PointIndices
   - type: topic
     topic: /indices
     input_type: PointIndices
@@ -126,6 +126,39 @@ edges:
   EXPECT_EQ(graph.edges[0].from.port, "indices");
 }
 
+TEST(PipelineGraph, AcceptsRepeatedInputPorts)
+{
+  const auto path = writeTempPipeline(R"(
+version: 1
+nodes:
+  - type: topic
+    topic: /a
+    input_type: PointXYZI
+    output_type: PointXYZI
+  - type: topic
+    topic: /b
+    input_type: PointXYZI
+    output_type: PointXYZI
+  - type: filter
+    name: PointCloudMergerXYZI_1
+    package: pcl_filter_components
+    filter: PointCloudMergerXYZI
+    input_type: PointXYZI,PointXYZI
+    output_type: PointXYZI
+edges:
+  - from: {node: /a, port: out}
+    to: {node: PointCloudMergerXYZI_1, port: input_1}
+  - from: {node: /b, port: out}
+    to: {node: PointCloudMergerXYZI_1, port: input_2}
+)");
+
+  const auto graph = pcl_filter_components::pipeline::loadPipelineGraph(path);
+
+  ASSERT_EQ(graph.edges.size(), 2U);
+  EXPECT_EQ(graph.edges[0].to.port, "input_1");
+  EXPECT_EQ(graph.edges[1].to.port, "input_2");
+}
+
 TEST(PipelineGraph, RejectsDuplicateTopicNodes)
 {
   const auto path = writeTempPipeline(R"(
@@ -135,9 +168,10 @@ nodes:
     topic: /duplicate
     input_type: PointXYZI
     output_type: PointXYZI
-  - type: output
+  - type: topic
     topic: /duplicate
     input_type: PointXYZI
+    output_type: PointXYZI
 edges: []
 )");
 

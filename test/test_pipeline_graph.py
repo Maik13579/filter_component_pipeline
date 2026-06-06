@@ -15,8 +15,9 @@ def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
         nodes=[
             Node(
                 id="/points",
-                type="input",
+                type="topic",
                 topic="/points",
+                input_type="PointXYZI",
                 output_type="PointXYZI",
                 position={"x": 10.0, "y": 20.0},
             ),
@@ -28,8 +29,7 @@ def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
                 filter="VoxelGridXYZI",
                 component_class="pcl_filter_components::VoxelGridXYZIComponent",
                 input_type="PointXYZI",
-                output_type="PointXYZI",
-                optional_output_type="PointIndices",
+                output_type="PointXYZI,PointIndices",
                 parameters={"filter.leaf_size_x": 0.1},
                 sync={"policy": "ExactTime"},
             ),
@@ -42,7 +42,7 @@ def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
                 qos={"depth": 7, "reliability": "reliable"},
                 position={"x": 120.0, "y": 80.0},
             ),
-            Node(id="/filtered", type="output", topic="/filtered", input_type="PointXYZI"),
+            Node(id="/filtered", type="topic", topic="/filtered", input_type="PointXYZI", output_type="PointXYZI"),
         ],
         edges=[
             Edge(PortRef("/points", "out"), PortRef("VoxelGridXYZI_1", "in")),
@@ -61,8 +61,7 @@ def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
     loaded = load_graph(str(path))
 
     assert loaded.nodes[1].input_type == "PointXYZI"
-    assert loaded.nodes[1].output_type == "PointXYZI"
-    assert loaded.nodes[1].optional_output_type == "PointIndices"
+    assert loaded.nodes[1].output_type == "PointXYZI,PointIndices"
     assert loaded.nodes[1].parameters["filter.leaf_size_x"] == 0.1
     assert loaded.nodes[1].sync["policy"] == "ExactTime"
     assert loaded.nodes[0].position == {"x": 10.0, "y": 20.0}
@@ -76,7 +75,7 @@ def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
 def test_graph_rejects_incompatible_custom_types() -> None:
     graph = Graph(
         nodes=[
-            Node(id="/indices", type="input", topic="/indices", output_type="PointIndices"),
+            Node(id="/indices", type="topic", topic="/indices", input_type="PointIndices", output_type="PointIndices"),
             Node(
                 id="VoxelGridXYZI_1",
                 name="VoxelGridXYZI_1",
@@ -107,7 +106,7 @@ def test_graph_rejects_topic_type_mismatch() -> None:
         graph.validate()
 
 
-def test_graph_accepts_optional_indices_output_port() -> None:
+def test_graph_accepts_indices_output_port() -> None:
     graph = Graph(
         nodes=[
             Node(
@@ -116,8 +115,7 @@ def test_graph_accepts_optional_indices_output_port() -> None:
                 type="filter",
                 package="pcl_filter_components",
                 filter="VoxelGridXYZI",
-                output_type="PointXYZI",
-                optional_output_type="PointIndices",
+                output_type="PointXYZI,PointIndices",
             ),
             Node(id="/indices", type="topic", topic="/indices", input_type="PointIndices", output_type="PointIndices"),
         ],
@@ -127,11 +125,35 @@ def test_graph_accepts_optional_indices_output_port() -> None:
     graph.validate()
 
 
+def test_graph_accepts_repeated_input_ports() -> None:
+    graph = Graph(
+        nodes=[
+            Node(id="/a", type="topic", topic="/a", input_type="PointXYZI", output_type="PointXYZI"),
+            Node(id="/b", type="topic", topic="/b", input_type="PointXYZI", output_type="PointXYZI"),
+            Node(
+                id="PointCloudMergerXYZI_1",
+                name="PointCloudMergerXYZI_1",
+                type="filter",
+                package="pcl_filter_components",
+                filter="PointCloudMergerXYZI",
+                input_type="PointXYZI,PointXYZI",
+                output_type="PointXYZI",
+            ),
+        ],
+        edges=[
+            Edge(PortRef("/a", "out"), PortRef("PointCloudMergerXYZI_1", "input_1")),
+            Edge(PortRef("/b", "out"), PortRef("PointCloudMergerXYZI_1", "input_2")),
+        ],
+    )
+
+    graph.validate()
+
+
 def test_graph_rejects_duplicate_topic_nodes() -> None:
     graph = Graph(
         nodes=[
             Node(id="/duplicate", type="topic", topic="/duplicate", input_type="PointXYZI", output_type="PointXYZI"),
-            Node(id="/duplicate", type="output", topic="/duplicate", input_type="PointXYZI"),
+            Node(id="/duplicate_2", type="topic", topic="/duplicate", input_type="PointXYZI", output_type="PointXYZI"),
         ],
     )
 
@@ -144,11 +166,14 @@ def test_discovery_reads_filter_and_type_adapter_exports() -> None:
 
     filters = {(item.package, item.filter): item for item in discovery.filters}
     assert ("pcl_filter_components", "VoxelGridXYZI") in filters
+    assert ("pcl_filter_components", "PointCloudMergerXYZI") in filters
     voxel = filters[("pcl_filter_components", "VoxelGridXYZI")]
     assert voxel.component_class == "pcl_filter_components::VoxelGridXYZIComponent"
     assert voxel.input_type == "PointXYZI"
-    assert voxel.output_type == "PointXYZI"
-    assert voxel.optional_output_type == "PointIndices"
+    assert voxel.output_type == "PointXYZI,PointIndices"
+    merger = filters[("pcl_filter_components", "PointCloudMergerXYZI")]
+    assert merger.input_type == "PointXYZI,PointXYZI"
+    assert merger.output_type == "PointXYZI"
 
     types = {(item.package, item.point_type): item for item in discovery.types}
     assert types[("pcl_filter_components", "PointXYZI")].message_type == "sensor_msgs/msg/PointCloud2"

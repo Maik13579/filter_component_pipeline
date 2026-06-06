@@ -24,8 +24,9 @@ std::string writeFactoryPipeline()
   stream << R"(
 version: 1
 nodes:
-  - type: input
+  - type: topic
     topic: /points/input
+    input_type: PointXYZI
     output_type: PointXYZI
   - type: filter
     name: VoxelGridXYZI_1
@@ -33,7 +34,6 @@ nodes:
     filter: VoxelGridXYZI
     input_type: PointXYZI
     output_type: PointXYZI
-    optional_output_type: PointIndices
     parameters:
       filter.leaf_size_x: 0.1
       filter.leaf_size_y: 0.1
@@ -45,9 +45,10 @@ nodes:
     qos:
       depth: 5
       reliability: best_effort
-  - type: output
+  - type: topic
     topic: /points/output
     input_type: PointXYZI
+    output_type: PointXYZI
 edges:
   - from: {node: /points/input, port: out}
     to: {node: VoxelGridXYZI_1, port: in}
@@ -55,6 +56,44 @@ edges:
     to: {node: /pcl_pipeline/voxel_filtered, port: in}
   - from: {node: /pcl_pipeline/voxel_filtered, port: out}
     to: {node: /points/output, port: in}
+)";
+  return path;
+}
+
+std::string writeMergerPipeline()
+{
+  const auto path = std::string{"/tmp/pcl_filter_components_merger_factory_test.yaml"};
+  std::ofstream stream{path};
+  stream << R"(
+version: 1
+nodes:
+  - type: topic
+    topic: /points/input_a
+    input_type: PointXYZI
+    output_type: PointXYZI
+  - type: topic
+    topic: /points/input_b
+    input_type: PointXYZI
+    output_type: PointXYZI
+  - type: filter
+    name: PointCloudMergerXYZI_1
+    package: pcl_filter_components
+    filter: PointCloudMergerXYZI
+    input_type: PointXYZI,PointXYZI
+    output_type: PointXYZI
+    parameters:
+      queue_size: 5
+  - type: topic
+    topic: /points/merged
+    input_type: PointXYZI
+    output_type: PointXYZI
+edges:
+  - from: {node: /points/input_a, port: out}
+    to: {node: PointCloudMergerXYZI_1, port: input_1}
+  - from: {node: /points/input_b, port: out}
+    to: {node: PointCloudMergerXYZI_1, port: input_2}
+  - from: {node: PointCloudMergerXYZI_1, port: out}
+    to: {node: /points/merged, port: in}
 )";
   return path;
 }
@@ -102,6 +141,11 @@ void expectFactoryLoadsPipeline(const std::string & pipeline_file)
 TEST(PipelineFactoryNode, LoadsAndControlsSingleFilterPipeline)
 {
   expectFactoryLoadsPipeline(writeFactoryPipeline());
+}
+
+TEST(PipelineFactoryNode, LoadsAndControlsMergerPipeline)
+{
+  expectFactoryLoadsPipeline(writeMergerPipeline());
 }
 
 TEST(PipelineFactoryNode, LoadsInstalledExamplePipeline)

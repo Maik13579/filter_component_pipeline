@@ -4,10 +4,13 @@
 #include "pcl_filter_components/pipeline/pipeline_graph.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <sstream>
 #include <utility>
+#include <vector>
 
 #include <yaml-cpp/yaml.h>
 
@@ -63,15 +66,74 @@ PipelinePort parsePort(const YAML::Node & node)
   return port;
 }
 
+std::vector<std::string> splitTypes(const std::string & value)
+{
+  std::vector<std::string> types;
+  std::stringstream stream{value};
+  std::string item;
+  while (std::getline(stream, item, ',')) {
+    const auto first = item.find_first_not_of(" \t\n\r");
+    if (first == std::string::npos) {
+      continue;
+    }
+    const auto last = item.find_last_not_of(" \t\n\r");
+    types.push_back(item.substr(first, last - first + 1U));
+  }
+  return types;
+}
+
+std::string portNameForType(
+  const std::string & stream_type,
+  size_t index,
+  size_t total,
+  bool outgoing)
+{
+  if (!outgoing && total > 1U) {
+    return "input_" + std::to_string(index + 1U);
+  }
+  if (stream_type == "PointIndices") {
+    return "indices";
+  }
+  if (stream_type.rfind("Point", 0) == 0) {
+    auto name = stream_type.substr(5);
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+      });
+    return name.empty() ? "out" : name;
+  }
+  auto name = stream_type;
+  std::replace(name.begin(), name.end(), '/', '_');
+  std::replace(name.begin(), name.end(), ':', '_');
+  std::transform(name.begin(), name.end(), name.begin(), [](unsigned char value) {
+      return static_cast<char>(std::tolower(value));
+    });
+  return name.empty() ? "out" : name;
+}
+
+std::string typeForPort(const std::string & value, const std::string & port, bool outgoing)
+{
+  const auto types = splitTypes(value);
+  if (types.empty()) {
+    return {};
+  }
+  if (port.empty() || port == "in" || port == "out") {
+    return types.front();
+  }
+  for (size_t index = 0; index < types.size(); ++index) {
+    const auto & stream_type = types[index];
+    if (port == stream_type || port == portNameForType(stream_type, index, types.size(), outgoing)) {
+      return stream_type;
+    }
+  }
+  return outgoing ? types.front() : std::string{};
+}
+
 std::string nodeTypeForEdge(const PipelineNode & node, bool outgoing, const std::string & port)
 {
   if (node.type == "topic") {
-    return node.output_type.empty() ? node.input_type : node.output_type;
+    return typeForPort(node.output_type.empty() ? node.input_type : node.output_type, port, outgoing);
   }
-  if (outgoing && (port == "indices" || port == "optional_output")) {
-    return node.optional_output_type;
-  }
-  return outgoing ? node.output_type : node.input_type;
+  return typeForPort(outgoing ? node.output_type : node.input_type, port, outgoing);
 }
 
 }  // namespace
@@ -109,7 +171,6 @@ PipelineGraph loadPipelineGraph(const std::string & path)
     node.component_class = optionalString(item, "component_class");
     node.input_type = optionalString(item, "input_type");
     node.output_type = optionalString(item, "output_type");
-    node.optional_output_type = optionalString(item, "optional_output_type");
     node.topic = optionalString(item, "topic");
     if (item["id"]) {
       node.id = requireString(item, "id");
@@ -163,25 +224,19 @@ void validatePipelineGraph(const PipelineGraph & graph)
     if (!ids.insert(node.id).second) {
       throw std::runtime_error("Duplicate pipeline node id '" + node.id + "'");
     }
-    if (
-      node.type != "input" && node.type != "filter" && node.type != "topic" &&
-      node.type != "output")
-    {
+    if (node.type != "filter" && node.type != "topic") {
       throw std::runtime_error("Unsupported node type '" + node.type + "' on node '" + node.id + "'");
     }
     if (node.type == "filter" && node.component_class.empty()) {
       throw std::runtime_error("Filter node '" + node.id + "' has no component class");
     }
-    if ((node.type == "input" || node.type == "topic" || node.type == "output") && node.topic.empty()) {
-      throw std::runtime_error("Pseudo node '" + node.id + "' must declare a topic");
+    if (node.type == "topic" && node.topic.empty()) {
+      throw std::runtime_error("Topic node '" + node.id + "' must declare a topic");
     }
     if (node.type == "topic" && node.input_type.empty() && node.output_type.empty()) {
       throw std::runtime_error("Topic node '" + node.id + "' must declare a type");
     }
-    if (
-      (node.type == "input" || node.type == "topic" || node.type == "output") &&
-      !topic_names.insert(node.topic).second)
-    {
+    if (node.type == "topic" && !topic_names.insert(node.topic).second) {
       throw std::runtime_error("Duplicate topic name '" + node.topic + "'");
     }
   }

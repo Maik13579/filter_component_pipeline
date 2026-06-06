@@ -35,18 +35,19 @@
     <pcl_filter_component
       filter="VoxelGridXYZI"
       input="PointXYZI"
-      output="PointXYZI"
-      optional_output="PointIndices"/>
+      output="PointXYZI,PointIndices"/>
     <pcl_filter_component
       filter="PassThroughXYZI"
       input="PointXYZI"
-      output="PointXYZI"
-      optional_output="PointIndices"/>
+      output="PointXYZI,PointIndices"/>
     <pcl_filter_component
       filter="CropBoxXYZI"
       input="PointXYZI"
-      output="PointXYZI"
-      optional_output="PointIndices"/>
+      output="PointXYZI,PointIndices"/>
+    <pcl_filter_component
+      filter="PointCloudMergerXYZI"
+      input="PointXYZI,PointXYZI"
+      output="PointXYZI"/>
     <pcl_filter_component
       type="PointXYZI"
       type_adapter="pcl_filter_components::ros::PclCloudAdapterPointXYZI"
