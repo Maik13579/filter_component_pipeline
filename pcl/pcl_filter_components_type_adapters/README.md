@@ -2,7 +2,7 @@
 
 `pcl_filter_components_type_adapters` provides header-only `rclcpp::TypeAdapter`
 definitions for stamped PCL clouds and PCL point indices. These adapters are the
-bridge between logical pipeline types and ROS message types.
+bridge between logical filter component types and ROS message types.
 
 Cloud logical types such as `PointXYZ`, `PointXYZI`, `PointXYZRGB`,
 `PointXYZRGBA`, and `PointNormal` use `sensor_msgs/msg/PointCloud2` as their ROS

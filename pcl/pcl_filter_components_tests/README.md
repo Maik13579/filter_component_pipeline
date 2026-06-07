@@ -9,3 +9,4 @@ Coverage includes:
 - filter and logical type discovery through the ament index
 - `rclcpp_components` registration metadata for concrete point-type packages
 - installed factory example pipeline validation
+- parameter descriptor coverage for port topic and QoS metadata

@@ -1,9 +1,10 @@
 # pcl_filter_components
 
-`pcl_filter_components` contains the generic PCL algorithms and reusable ROS 2
-component templates used by the concrete point-type packages. It does not
-register loadable components by itself; packages such as `pcl_filter_components_xyzi` and
-`pcl_filter_components_xyzrgb` instantiate these templates for specific PCL point types.
+`pcl_filter_components` contains the reusable PCL algorithms and ROS 2 component
+templates used by the concrete point-type packages. It does not register
+loadable components by itself; packages such as `pcl_filter_components_xyzi` and
+`pcl_filter_components_xyzrgb` instantiate these templates for specific PCL
+point types.
 
 Namespaces:
 
@@ -159,5 +160,5 @@ outputs:
 ```
 
 Edges in a graph connect topic nodes or other filters to these named ports. The
-factory later turns those edges into `inputs.cloud.topic`,
-`outputs.cloud.topic`, and `outputs.indices.topic` parameters.
+factory later turns those edges into parameters such as `inputs.cloud.topic` and
+`outputs.cloud.topic`.

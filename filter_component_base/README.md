@@ -10,13 +10,19 @@ parameters, QoS parameters, and synchronization behavior.
 
 ## Port Descriptors
 
-Each input or output descriptor has a port name, a default topic, an adapter
-type, and help text. During lifecycle configuration, the base class uses input
-descriptors to declare parameters such as `inputs.cloud.topic` and
-`inputs.cloud.qos.reliability`, then creates the matching typed subscriptions.
-It uses output descriptors in the same way for parameters such as
-`outputs.cloud.topic` and `outputs.cloud.qos.depth`, then creates typed
-publishers.
+Each input or output descriptor has a port name, an adapter type, and help text.
+During lifecycle configuration, the base class uses input descriptors to declare
+parameters such as `inputs.cloud.topic` and `inputs.cloud.qos.reliability`, then
+creates the matching typed subscriptions. It uses output descriptors in the same
+way for parameters such as `outputs.cloud.topic` and
+`outputs.cloud.qos.depth`, then creates typed publishers.
+
+Topic parameters are declared automatically from the port descriptors. Input
+ports use `~/_input/<port_name>` and output ports use
+`~/_output/<port_name>` as their generated defaults; component authors do not
+set these defaults in the port descriptor. In saved graph workflows,
+`filter_component_factory` maps graph edges onto those parameters when it
+launches the component pipeline.
 
 Derived components receive data by named port:
 
@@ -51,8 +57,8 @@ accessors used by single-input components.
 Custom components derive from `FilterComponentBase` and
 pass compile-time input and output descriptor arrays into the base constructor.
 The constructor call names the component and gives the base enough information
-to declare port topics, QoS parameters, publishers, subscriptions, and optional
-sync parameters.
+to declare topic parameters, QoS parameters, publishers, subscriptions, and
+optional sync parameters.
 
 `inputPorts()` declares what the component consumes. `outputPorts()` declares
 what it can publish. `configure()` reads component-specific parameters and

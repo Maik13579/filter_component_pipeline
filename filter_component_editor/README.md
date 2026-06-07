@@ -9,9 +9,10 @@ graph while it is edited.
 
 ## Editing Model
 
-The editor discovers logical point types from package metadata and discovers
-filter components from the concrete point-type packages. Users build a graph by
-adding filter nodes, creating topic nodes, and connecting named ports.
+The editor discovers logical stream types from package metadata and discovers
+filter components from packages that export `<filter_component>` metadata. Users
+build a graph by adding filter nodes, creating topic nodes, and connecting named
+ports.
 
 When a filter is added, the editor records its package, filter name, component
 class, logical input type, logical output types, default ports, and discovered

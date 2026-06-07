@@ -1,13 +1,13 @@
-# PCL Filter Pipeline
+# Filter Component Pipeline
 
-This repository contains ROS 2 packages for building point cloud filter
-pipelines from reusable PCL operations. A pipeline is a graph of topic nodes and
-filter nodes connected by typed ports.
+This repository contains ROS 2 packages for building filter pipelines from
+loadable components. A pipeline is a graph of topic nodes and filter nodes
+connected by typed ports.
 
 A filter node is a loadable ROS 2 lifecycle component. Each component wraps one
-PCL operation, declares its input and output ports, exposes filter parameters,
-and uses typed adapters to move data between ROS messages and PCL data
-structures. Topic nodes are graph bindings: they name ROS topics that enter,
+operation, declares its input and output ports, exposes parameters, and uses
+typed adapters to move data between ROS messages and the component's native data
+representation. Topic nodes are graph bindings: they name ROS topics that enter,
 leave, or connect parts of the graph. Topic nodes are not loaded as filter
 components.
 
@@ -16,7 +16,7 @@ components.
 - [Pipeline Model](#pipeline-model)
 - [Packages](#packages)
 - [Architecture](#architecture)
-- [Filter Reference](#filter-reference)
+- [PCL Filter Reference](#pcl-filter-reference)
   - [Downsampling](#downsampling)
   - [Outlier Removal](#outlier-removal)
   - [Selection](#selection)
@@ -32,23 +32,27 @@ components.
 
 The graph has three main concepts:
 
-- Filter components: lifecycle components such as `VoxelGridXYZI` or
-  `PassThroughXYZ` that process point cloud data.
+- Filter components: lifecycle components such as `VoxelGridXYZI` or future
+  image filters that process one or more typed streams.
 - Ports: named inputs and outputs on a filter component. Single-cloud filters
   use the `cloud` input and `cloud`/`orig_cloud` outputs. Merger filters
   use `input_1`, `input_2`, `cloud`, `orig_input_1`, and `orig_input_2`.
 - Topic nodes: endpoints and intermediate bindings that assign ROS topic names
   to graph edges.
 
-Logical point types describe the data type flowing through a port. Cloud types
-such as `PointXYZ`, `PointXYZI`, `PointXYZRGB`, and `PointXYZRGBA` all map to
-`sensor_msgs/msg/PointCloud2`. The `PointIndices` logical type maps to
-`pcl_msgs/msg/PointIndices`.
+Logical types describe the data type flowing through a port. The current PCL
+family exports cloud types such as `PointXYZ`, `PointXYZI`, `PointXYZRGB`, and
+`PointXYZRGBA`, all backed by `sensor_msgs/msg/PointCloud2`. The `PointIndices`
+logical type maps to `pcl_msgs/msg/PointIndices`.
 
 Because several logical cloud types share the same ROS message type, the editor
 can show both strict logical compatibility and looser ROS-message compatibility.
 For example, a `PointXYZ` topic and a `PointXYZI` filter both use
 `sensor_msgs/msg/PointCloud2`, but their logical point types differ.
+
+Component topic parameters such as `inputs.cloud.topic` and
+`outputs.cloud.topic` are normally filled from graph edges by
+`filter_component_factory`.
 
 ## Packages
 
@@ -77,7 +81,7 @@ filter_component_synchronizer
       -> filter_component_editor
 ```
 
-Concrete packages export filters with package metadata similar to:
+Concrete PCL packages export filters with package metadata similar to:
 
 ```xml
 <filter_component
@@ -95,7 +99,7 @@ They also export logical cloud aliases:
   message_type="sensor_msgs/msg/PointCloud2"/>
 ```
 
-## Filter Reference
+## PCL Filter Reference
 
 Concrete components are exported by point-type package. Common filters are
 available as `XYZ`, `XYZI`, `XYZRGB`, and `XYZRGBA` variants, such as
