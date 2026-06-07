@@ -1,0 +1,18 @@
+// Copyright 2026 Maik Knof
+// SPDX-License-Identifier: Apache-2.0
+
+#include <gtest/gtest.h>
+
+#include "pcl_filter_components/filters/surface/bilateral_filter.hpp"
+#include "xyzi_filter_test_utils.hpp"
+
+TEST(BilateralFilterXYZI, Runs)
+{
+  pcl_filter_components::filters::surface::BilateralFilter<pcl_filter_components_tests::Point> filter;
+  filter.configure({0.2, 0.05});
+
+  pcl_filter_components_tests::Cloud output;
+  filter.filter(pcl_filter_components_tests::sampleCloud(), output);
+
+  EXPECT_LE(output.size(), pcl_filter_components_tests::sampleCloud().size());
+}

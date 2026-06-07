@@ -52,51 +52,35 @@ For example, a `PointXYZ` topic and a `PointXYZI` filter both use
 
 ## Packages
 
-- [pcl_filter_type_adapters](pcl_filter_type_adapters/README.md): PCL cloud and
-  point-indices type adapters plus logical type discovery metadata.
-- [pcl_filter_synchronizer](pcl_filter_synchronizer/README.md): header-only
+- [filter_component_synchronizer](filter_component_synchronizer/README.md): header-only
   unique-pointer synchronizer for filters with named input ports.
-- [pcl_filter_base](pcl_filter_base/README.md): lifecycle component base classes
+- [filter_component_base](filter_component_base/README.md): lifecycle component base classes
   and descriptor helpers for declaring ports, parameters, QoS, and sync.
-- [pcl_filter_components](pcl_filter_components/README.md): generic PCL filter
-  algorithms and reusable component templates.
-- [pcl_filter_xyz](pcl_filter_xyz/README.md): `PointXYZ` aliases, filter
-  metadata, and registered components.
-- [pcl_filter_xyzi](pcl_filter_xyzi/README.md): `PointXYZI` aliases, filter
-  metadata, and registered components.
-- [pcl_filter_xyzrgb](pcl_filter_xyzrgb/README.md): `PointXYZRGB` aliases,
-  filter metadata, and registered components.
-- [pcl_filter_xyzrgba](pcl_filter_xyzrgba/README.md): `PointXYZRGBA` aliases,
-  filter metadata, and registered components.
-- [pcl_filter_factory](pcl_filter_factory/README.md): saved graph interpreter
+- [filter_component_factory](filter_component_factory/README.md): saved graph interpreter
   that loads filter nodes and binds their ports to topics.
-- [pcl_filter_editor](pcl_filter_editor/README.md): rqt graph editor with live
+- [filter_component_editor](filter_component_editor/README.md): rqt graph editor with live
   background pipeline validation.
-- [pcl_filter_tests](pcl_filter_tests/README.md): repository validation coverage
-  for discovery, registration, and example graph parsing.
+- [pcl](pcl/README.md): PCL-specific algorithms, type adapters, point-type
+  component packages, and PCL validation tests.
 
 ## Architecture
 
-The generic packages define common infrastructure. Concrete point-type packages
-instantiate those templates for one PCL point type and export metadata for
-factory and editor discovery.
+The generic packages define common infrastructure. PCL packages live under
+[`pcl/`](pcl/README.md), where concrete point-type packages instantiate reusable
+PCL templates and export metadata for factory and editor discovery.
 
 ```text
-pcl_filter_type_adapters
-  -> pcl_filter_synchronizer
-    -> pcl_filter_base
-    -> pcl_filter_components
-      -> pcl_filter_xyz / pcl_filter_xyzi / pcl_filter_xyzrgb / pcl_filter_xyzrgba
-        -> pcl_filter_factory
-          -> pcl_filter_tests
-
-pcl_filter_editor -> pcl_filter_tests
+filter_component_synchronizer
+  -> filter_component_base
+    -> pcl/*
+      -> filter_component_factory
+      -> filter_component_editor
 ```
 
 Concrete packages export filters with package metadata similar to:
 
 ```xml
-<pcl_filter_component
+<filter_component
   filter="VoxelGridXYZI"
   input="PointXYZI"
   output="PointXYZI"/>
@@ -105,9 +89,9 @@ Concrete packages export filters with package metadata similar to:
 They also export logical cloud aliases:
 
 ```xml
-<pcl_filter_component
+<filter_component
   type="PointXYZI"
-  type_adapter="pcl_filter_xyzi::ros::PclCloudAdapterPointXYZI"
+  type_adapter="pcl_filter_components_xyzi::ros::PclCloudAdapterPointXYZI"
   message_type="sensor_msgs/msg/PointCloud2"/>
 ```
 
@@ -116,8 +100,8 @@ They also export logical cloud aliases:
 Concrete components are exported by point-type package. Common filters are
 available as `XYZ`, `XYZI`, `XYZRGB`, and `XYZRGBA` variants, such as
 `VoxelGridXYZI` or `PlaneClipperXYZRGBA`. Color filters are exported only by
-`pcl_filter_xyzrgb` and `pcl_filter_xyzrgba`; intensity filters are exported
-only by `pcl_filter_xyzi`.
+`pcl_filter_components_xyzrgb` and `pcl_filter_components_xyzrgba`; intensity filters are exported
+only by `pcl_filter_components_xyzi`.
 
 Single-cloud filters use one `cloud` input and publish `cloud` plus
 `orig_cloud` outputs. Multi-input filters use `input_1`, `input_2`, and publish
@@ -221,9 +205,9 @@ nodes:
     topic_type: PointXYZI
   - type: filter
     name: VoxelGridXYZI_1
-    package: pcl_filter_xyzi
+    package: pcl_filter_components_xyzi
     filter: VoxelGridXYZI
-    component_class: pcl_filter_xyzi::VoxelGridXYZIComponent
+    component_class: pcl_filter_components_xyzi::VoxelGridXYZIComponent
     input_type: PointXYZI
     output_type: PointXYZI
     parameters:

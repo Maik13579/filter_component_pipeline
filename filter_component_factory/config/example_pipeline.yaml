@@ -1,0 +1,69 @@
+version: 1
+editor:
+  orientation: top_down
+nodes:
+  - type: topic
+    topic: /points/input
+    input_type: PointXYZI
+    output_type: PointXYZI
+    position: {x: 280.0, y: 0.0}
+  - type: filter
+    name: VoxelGridXYZI_1
+    package: pcl_filter_components_xyzi
+    filter: VoxelGridXYZI
+    component_class: pcl_filter_components_xyzi::VoxelGridXYZIComponent
+    input_type: PointXYZI
+    output_type: PointXYZI
+    parameters:
+      filter.leaf_size_x: 0.1
+      filter.leaf_size_y: 0.1
+      filter.leaf_size_z: 0.1
+      filter.invert: false
+    inputs:
+      cloud:
+        qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
+    outputs:
+      cloud:
+        qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
+    position: {x: 280.0, y: 160.0}
+  - type: topic
+    topic: /pcl_pipeline/voxel_filtered
+    input_type: PointXYZI
+    output_type: PointXYZI
+    position: {x: 280.0, y: 320.0}
+  - type: filter
+    name: CropBoxXYZI_1
+    package: pcl_filter_components_xyzi
+    filter: CropBoxXYZI
+    component_class: pcl_filter_components_xyzi::CropBoxXYZIComponent
+    input_type: PointXYZI
+    output_type: PointXYZI
+    parameters:
+      filter.min_x: -10.0
+      filter.min_y: -10.0
+      filter.min_z: -2.0
+      filter.max_x: 10.0
+      filter.max_y: 10.0
+      filter.max_z: 3.0
+      filter.invert: false
+    inputs:
+      cloud:
+        qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
+    outputs:
+      cloud:
+        qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
+    position: {x: 280.0, y: 480.0}
+  - type: topic
+    topic: /points/output
+    input_type: PointXYZI
+    output_type: PointXYZI
+    position: {x: 280.0, y: 640.0}
+edges:
+  - from: {node: /points/input, port: out}
+    to: {node: VoxelGridXYZI_1, port: in}
+  - from: {node: VoxelGridXYZI_1, port: out}
+    to: {node: /pcl_pipeline/voxel_filtered, port: in}
+  - from: {node: /pcl_pipeline/voxel_filtered, port: out}
+    to: {node: CropBoxXYZI_1, port: in}
+  - from: {node: CropBoxXYZI_1, port: out}
+    to: {node: /points/output, port: in}
