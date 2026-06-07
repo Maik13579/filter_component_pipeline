@@ -1,18 +1,12 @@
 # PCL Packages
 
-This directory groups the PCL-specific packages. The generic filter framework
-packages stay at the repository root so future image, OpenCV, or other message
-component families can be added alongside `pcl/`.
-
-The PCL packages provide one concrete component family for the generic filter
-component framework. They export PCL logical types and filters through the same
-`<filter_component>` metadata used by the editor and factory.
+This directory groups the PCL-specific packages.
 
 ## Packages
 
 - [pcl_filter_components_type_adapters](pcl_filter_components_type_adapters/README.md): PCL cloud and
   point-indices type adapters plus logical type discovery metadata.
-- [pcl_filter_components](pcl_filter_components/README.md): generic PCL filter
+- [pcl_filter_components](pcl_filter_components/README.md): PCL filter
   algorithms and reusable component templates.
 - [pcl_filter_components_xyz](pcl_filter_components_xyz/README.md): `PointXYZ` aliases, filter
   metadata, and registered components.

@@ -3,9 +3,8 @@
 ![](doc/editor.png)
 
 `filter_component_editor` provides the `Filter Component Pipeline Editor` rqt
-plugin. It is a graph editor for saved YAML pipelines, with a live pipeline
-running in the background to discover component parameters and validate the
-graph while it is edited.
+plugin. It is a graph editor for YAML pipeline files. A background pipeline is
+used for component parameter discovery and graph validation.
 
 ## Editing Model
 
@@ -15,7 +14,7 @@ build a graph by adding filter nodes, creating topic nodes, and connecting named
 ports.
 
 When a filter is added, the editor records its package, filter name, component
-class, logical input type, logical output types, default ports, and discovered
+class, logical input type, logical output types, declared ports, and discovered
 parameters. When a topic node is created, it becomes a graph endpoint or
 intermediate binding for a ROS topic. Topic nodes are saved in YAML, but they
 are not loaded as lifecycle components.
@@ -25,10 +24,9 @@ from `out` to a filter's `cloud` input, and the filter's `cloud` output connects
 to an output topic node's `in` port. Port QoS, filter parameters, and multi-input
 sync settings can be edited on the graph node and saved with the YAML.
 
-The live background pipeline is used for parameter discovery and immediate graph
-validation. Refreshing the live pipeline applies the current graph to that
-background runtime. Saving YAML still produces the portable pipeline
-description; the saved graph is the artifact that the factory interprets later.
+The background pipeline is used for parameter discovery and graph validation.
+Refreshing it applies the current graph to the background runtime. Saving YAML
+produces the graph consumed by the factory.
 
 The Fit control adjusts the view to the current graph layout.
 

@@ -38,10 +38,6 @@ packages export those logical types and map them to ROS message types through
 type adapters. The editor and factory use that metadata to discover compatible
 filters, topic types, and component classes.
 
-Component topic parameters such as `inputs.<port>.topic` and
-`outputs.<port>.topic` are normally filled from graph edges by
-`filter_component_factory`.
-
 ## Packages
 
 - [filter_component_synchronizer](filter_component_synchronizer/README.md): header-only
@@ -50,8 +46,8 @@ Component topic parameters such as `inputs.<port>.topic` and
   and descriptor helpers for declaring ports, parameters, QoS, and sync.
 - [filter_component_factory](filter_component_factory/README.md): saved graph interpreter
   that loads filter nodes and binds their ports to topics.
-- [filter_component_editor](filter_component_editor/README.md): rqt graph editor with live
-  background pipeline validation.
+- [filter_component_editor](filter_component_editor/README.md): rqt graph editor for
+  pipeline authoring and validation.
 - [pcl](pcl/README.md): PCL-specific algorithms, type adapters, point-type
   component packages, and PCL validation tests.
 
@@ -90,21 +86,21 @@ They can also export logical type aliases:
 
 ## Editor
 
-`filter_component_editor` provides an rqt plugin for building pipeline graphs
-visually. It discovers installed filter components and logical stream types,
-lets users place filter and topic nodes, connect named ports, edit parameters
-and QoS, and save the result as portable YAML.
+`filter_component_editor` provides an rqt plugin for pipeline graph authoring.
+It discovers installed filter components and logical stream types, supports
+filter and topic node editing, connects named ports, edits parameters and QoS,
+and writes the graph as YAML.
 
-The editor also runs a background pipeline for parameter discovery and graph
-validation while the graph is edited. The saved YAML is the artifact consumed by
-`filter_component_factory` when launching the pipeline.
+The editor uses a background pipeline for parameter discovery and graph
+validation. `filter_component_factory` later reads the saved YAML to launch the
+pipeline.
 
 ## Graph YAML
 
-Saved YAML is the portable pipeline description. Filter nodes record component
-identity, filter parameters, port QoS, optional synchronization settings, and
-editor layout. Edges connect named ports. Topic nodes provide the ROS topic
-bindings used by those edges.
+Saved YAML describes the pipeline. Filter nodes record component identity,
+filter parameters, port QoS, optional synchronization settings, and editor
+layout. Edges connect named ports. Topic nodes provide the ROS topic bindings
+used by those edges.
 
 ```yaml
 nodes:
@@ -130,5 +126,5 @@ edges:
     to: {node: /output, port: in}
 ```
 
-When the factory reads a graph, it loads filter nodes as components and maps the
-topic-node edges to the corresponding component topic parameters.
+When the factory reads a graph, it loads filter nodes as components and applies
+the topic-node bindings to the corresponding component ports.

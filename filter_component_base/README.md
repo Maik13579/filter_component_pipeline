@@ -12,17 +12,12 @@ parameters, QoS parameters, and synchronization behavior.
 
 Each input or output descriptor has a port name, an adapter type, and help text.
 During lifecycle configuration, the base class uses input descriptors to declare
-parameters such as `inputs.cloud.topic` and `inputs.cloud.qos.reliability`, then
-creates the matching typed subscriptions. It uses output descriptors in the same
-way for parameters such as `outputs.cloud.topic` and
-`outputs.cloud.qos.depth`, then creates typed publishers.
+the matching topic and QoS parameters, then creates typed subscriptions. It uses
+output descriptors in the same way to create typed publishers.
 
-Topic parameters are declared automatically from the port descriptors. Input
-ports use `~/_input/<port_name>` and output ports use
-`~/_output/<port_name>` as their generated defaults; component authors do not
-set these defaults in the port descriptor. In saved graph workflows,
-`filter_component_factory` maps graph edges onto those parameters when it
-launches the component pipeline.
+Topic parameters are declared automatically from the port descriptors. Component
+authors declare ports; saved graph workflows assign the topic bindings when
+`filter_component_factory` launches the component pipeline.
 
 Derived components receive data by named port:
 
