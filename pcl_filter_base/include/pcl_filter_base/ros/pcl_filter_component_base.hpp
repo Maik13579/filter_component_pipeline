@@ -14,7 +14,6 @@
 #include <utility>
 #include <vector>
 
-#include <pcl/PointIndices.h>
 #include <rclcpp/create_publisher.hpp>
 #include <lifecycle_msgs/msg/state.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -22,32 +21,10 @@
 
 #include "pcl_filter_base/ros/parameter_utils.hpp"
 #include "pcl_filter_synchronizer/pcl_filter_synchronizer.hpp"
-#include "pcl_filter_type_adapters/ros/stamped_pcl_indices_type_adapter.hpp"
 #include "pcl_filter_type_adapters/ros/stamped_pcl_type_adapter.hpp"
 
 namespace pcl_filter_base::ros
 {
-
-namespace detail
-{
-
-template <typename FilterT, typename CloudT, typename = void>
-struct HasFilterIndices : std::false_type
-{
-};
-
-template <typename FilterT, typename CloudT>
-struct HasFilterIndices<
-  FilterT,
-  CloudT,
-  std::void_t<decltype(
-      std::declval<FilterT &>().filterIndices(
-        std::declval<const CloudT &>(),
-        std::declval<std::vector<int> &>()))>> : std::true_type
-{
-};
-
-}  // namespace detail
 
 template <typename PointT, typename FilterT>
 class PclFilterComponentBase : public rclcpp_lifecycle::LifecycleNode
@@ -56,7 +33,6 @@ public:
   using StampedCloud = pcl::PointCloud<PointT>;
   using Cloud = StampedCloud;
   using CloudAdapter = pcl_filter_type_adapters::ros::PclCloudAdapter<PointT>;
-  using IndicesAdapter = pcl_filter_type_adapters::ros::PclIndicesAdapter;
   using Publisher = rclcpp::Publisher<CloudAdapter>;
   using Subscription = rclcpp::Subscription<CloudAdapter>;
   using CallbackReturn =
@@ -88,7 +64,6 @@ public:
   struct PortDescriptor
   {
     std::string name;
-    std::string default_topic;
     std::string description;
     std::string default_reliability{"best_effort"};
     std::string default_history{"keep_last"};
@@ -110,12 +85,10 @@ public:
   template <typename AdapterT>
   static PortDescriptor inputPort(
     const std::string & name,
-    const std::string & default_topic,
     const std::string & description)
   {
     return {
       name,
-      default_topic,
       description,
       "best_effort",
       "keep_last",
@@ -141,12 +114,10 @@ public:
   template <typename AdapterT>
   static PortDescriptor outputPort(
     const std::string & name,
-    const std::string & default_topic,
     const std::string & description)
   {
     return {
       name,
-      default_topic,
       description,
       "best_effort",
       "keep_last",
@@ -178,7 +149,7 @@ public:
       declareParameterIfNotDeclared(
         *this,
         inputTopicParameterName(port.name),
-        port.default_topic,
+        defaultPortTopic("input", port.name),
         makeParameterDescriptor(port.description));
       declarePortQosParameters("inputs", port);
     }
@@ -186,7 +157,7 @@ public:
       declareParameterIfNotDeclared(
         *this,
         outputTopicParameterName(port.name),
-        port.default_topic,
+        defaultPortTopic("output", port.name),
         makeParameterDescriptor(port.description));
       declarePortQosParameters("outputs", port);
     }
@@ -231,6 +202,11 @@ protected:
     const std::string & field)
   {
     return direction + "." + port_name + ".qos." + field;
+  }
+
+  static std::string defaultPortTopic(const std::string & direction, const std::string & port_name)
+  {
+    return "~/_" + direction + "/" + port_name;
   }
 
   CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override
@@ -315,13 +291,7 @@ protected:
     publishers_.clear();
   }
 
-  virtual void processCloud(std::unique_ptr<StampedCloud> input)
-  {
-    auto output = std::make_unique<StampedCloud>();
-    output->header = input->header;
-    filter_.filter(*input, *output);
-    publishCloud(std::move(output));
-  }
+  virtual void process() = 0;
 
   template <typename AdapterT>
   std::shared_ptr<rclcpp::Publisher<AdapterT>> createAdaptedPublisher(
@@ -366,26 +336,6 @@ protected:
     static_cast<PublisherHolder<AdapterT> *>(iter->second.get())->publisher->publish(std::move(message));
   }
 
-  void publishCloud(std::unique_ptr<StampedCloud> output)
-  {
-    publish<CloudAdapter>("cloud", std::move(output));
-  }
-
-  void publishCloud(const std::string & output_port, std::unique_ptr<StampedCloud> output)
-  {
-    publish<CloudAdapter>(output_port, std::move(output));
-  }
-
-  void publishIndices(std::unique_ptr<pcl::PointIndices> output)
-  {
-    publish<IndicesAdapter>("indices", std::move(output));
-  }
-
-  virtual void processInputs()
-  {
-    processCloud(takeInput<CloudAdapter>("cloud"));
-  }
-
   void processSynchronizedInputs()
   {
     if (
@@ -394,7 +344,7 @@ protected:
     {
       return;
     }
-    processInputs();
+    process();
   }
 
   FilterT filter_;
@@ -414,18 +364,6 @@ protected:
     for (const auto & port : output_ports_) {
       outbound_topics_[port.name] =
         getParameter<std::string>(*this, outputTopicParameterName(port.name));
-    }
-  }
-
-  void publishFilterIndices(const std::string & output_port, const StampedCloud & input)
-  {
-    if constexpr (detail::HasFilterIndices<FilterT, StampedCloud>::value) {
-      auto output = std::make_unique<pcl::PointIndices>();
-      output->header = input.header;
-      filter_.filterIndices(input, output->indices);
-      publish<IndicesAdapter>(output_port, std::move(output));
-    } else {
-      throw std::runtime_error("The selected filter does not support point-indices output");
     }
   }
 

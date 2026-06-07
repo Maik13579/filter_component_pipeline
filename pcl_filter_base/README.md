@@ -80,7 +80,6 @@ protected:
     return {{
       Base::template inputPort<CloudAdapter>(
         "cloud",
-        "/points/input",
         "Input point cloud topic."),
     }};
   }
@@ -90,7 +89,6 @@ protected:
     return {{
       Base::template outputPort<CloudAdapter>(
         "cloud",
-        "/points/output",
         "Filtered point cloud topic."),
     }};
   }
@@ -98,6 +96,15 @@ protected:
   void configureFilter() override
   {
     // Read filter-specific parameters and configure this->filter_.
+  }
+
+  void process() override
+  {
+    auto input = this->template takeInput<CloudAdapter>("cloud");
+    auto output = std::make_unique<StampedCloud>();
+    output->header = input->header;
+    this->filter_.filter(*input, *output);
+    this->template publish<CloudAdapter>("cloud", std::move(output));
   }
 };
 ```

@@ -51,10 +51,11 @@ class ComponentParameterDiscovery:
 
     def parameters_for_loaded_node(self, runtime_node, full_node_name: str) -> ParameterMetadata:
         names = self._list_parameter_names(runtime_node, full_node_name)
-        names = [name for name in names if self._is_filter_parameter(name)]
+        names = [name for name in names if self._is_discoverable_parameter(name)]
         if not names:
             return ParameterMetadata()
-        defaults = self._get_parameter_defaults(runtime_node, full_node_name, names)
+        filter_names = [name for name in names if self._is_filter_parameter(name)]
+        defaults = self._get_parameter_defaults(runtime_node, full_node_name, filter_names) if filter_names else {}
         descriptions = self._describe_parameters(runtime_node, full_node_name, names)
         return ParameterMetadata(defaults=defaults, descriptions=descriptions)
 
@@ -100,9 +101,12 @@ class ComponentParameterDiscovery:
             for descriptor in future.result().descriptors
         }
 
-    def _is_filter_parameter(self, name: str) -> bool:
+    def _is_discoverable_parameter(self, name: str) -> bool:
         if name in {"start_type_description_service", "use_sim_time"}:
             return False
+        return True
+
+    def _is_filter_parameter(self, name: str) -> bool:
         return not (
             name.startswith("inputs.")
             or name.startswith("outputs.")

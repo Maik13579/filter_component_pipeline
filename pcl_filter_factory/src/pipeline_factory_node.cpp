@@ -4,10 +4,8 @@
 #include "pcl_filter_factory/pipeline/pipeline_factory_node.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <map>
 #include <memory>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -106,86 +104,6 @@ std::string outputParameterName(const std::string & port)
   return "outputs." + normalizedOutputPort(port) + ".topic";
 }
 
-std::vector<std::string> splitTypes(const std::string & value)
-{
-  std::vector<std::string> types;
-  std::stringstream stream{value};
-  std::string item;
-  while (std::getline(stream, item, ',')) {
-    const auto first = item.find_first_not_of(" \t\n\r");
-    if (first == std::string::npos) {
-      continue;
-    }
-    const auto last = item.find_last_not_of(" \t\n\r");
-    types.push_back(item.substr(first, last - first + 1U));
-  }
-  return types;
-}
-
-std::vector<std::pair<std::string, std::string>> splitPorts(const std::string & value)
-{
-  std::vector<std::pair<std::string, std::string>> ports;
-  for (const auto & item : splitTypes(value)) {
-    const auto separator = item.find(':');
-    if (separator == std::string::npos) {
-      ports.push_back({"", item});
-      continue;
-    }
-    auto name = item.substr(0, separator);
-    auto stream_type = item.substr(separator + 1U);
-    const auto name_first = name.find_first_not_of(" \t\n\r");
-    const auto name_last = name.find_last_not_of(" \t\n\r");
-    name = name_first == std::string::npos ? std::string{} :
-      name.substr(name_first, name_last - name_first + 1U);
-    const auto type_first = stream_type.find_first_not_of(" \t\n\r");
-    const auto type_last = stream_type.find_last_not_of(" \t\n\r");
-    stream_type = type_first == std::string::npos ? std::string{} :
-      stream_type.substr(type_first, type_last - type_first + 1U);
-    if (!stream_type.empty()) {
-      ports.push_back({name, stream_type});
-    }
-  }
-  return ports;
-}
-
-std::string portNameForType(
-  const std::string & stream_type,
-  size_t index,
-  size_t total,
-  bool outgoing)
-{
-  if (!outgoing && total > 1U) {
-    return "input_" + std::to_string(index + 1U);
-  }
-  if (stream_type == "PointIndices") {
-    return "indices";
-  }
-  if (stream_type.rfind("Point", 0) == 0) {
-    return "cloud";
-  }
-  auto name = stream_type;
-  std::replace(name.begin(), name.end(), '/', '_');
-  std::replace(name.begin(), name.end(), ':', '_');
-  std::transform(name.begin(), name.end(), name.begin(), [](unsigned char value) {
-      return static_cast<char>(std::tolower(value));
-    });
-  return name.empty() ? (outgoing ? "out" : "in") : name;
-}
-
-std::vector<std::string> portsForType(const std::string & value, bool outgoing)
-{
-  const auto ports_with_types = splitPorts(value);
-  auto ports = std::vector<std::string>{};
-  for (size_t index = 0; index < ports_with_types.size(); ++index) {
-    const auto & port_name = ports_with_types[index].first;
-    const auto & stream_type = ports_with_types[index].second;
-    ports.push_back(port_name.empty() ?
-      portNameForType(stream_type, index, ports_with_types.size(), outgoing) :
-      port_name);
-  }
-  return ports;
-}
-
 std::string topicNamePartForText(const std::string & text)
 {
   auto name = text;
@@ -206,11 +124,6 @@ std::string topicNamePartForText(const std::string & text)
 std::string sharedEdgeTopic(const PipelineEdge & edge)
 {
   return "/" + topicNamePartForText(edge.from.node) + "_" + topicNamePartForText(edge.to.node);
-}
-
-std::string hiddenPortTopic(const std::string & direction, const std::string & port)
-{
-  return "~/_" + direction + "/" + topicNamePartForText(port);
 }
 
 void appendPortQosParameters(
@@ -382,46 +295,12 @@ std::vector<rclcpp::Parameter> PipelineFactoryNode::parametersForNode(const Pipe
           topic});
     }
   }
-  for (const auto & port : portsForType(node.input_ports.empty() ? node.input_type : node.input_ports, false)) {
-    const auto existing = std::find_if(
-      inbound_topics.begin(),
-      inbound_topics.end(),
-      [&port](const auto & item) {return item.first == port;});
-    if (existing != inbound_topics.end()) {
-      continue;
-    }
-    const auto topic = hiddenPortTopic("input", port);
-    RCLCPP_WARN(
-      this->get_logger(),
-      "Filter '%s' input port '%s' has no configured topic; using hidden fallback '%s'",
-      node.id.c_str(),
-      port.c_str(),
-      topic.c_str());
-    parameters.push_back(rclcpp::Parameter{inputParameterName(port), topic});
-  }
 
   const auto outbound_topics = outputTopicsForNode(node.id);
   for (const auto & [port, topic] : outbound_topics) {
     if (!topic.empty()) {
       parameters.push_back(rclcpp::Parameter{outputParameterName(port), topic});
     }
-  }
-  for (const auto & port : portsForType(node.output_ports.empty() ? node.output_type : node.output_ports, true)) {
-    const auto existing = std::find_if(
-      outbound_topics.begin(),
-      outbound_topics.end(),
-      [&port](const auto & item) {return item.first == port;});
-    if (existing != outbound_topics.end()) {
-      continue;
-    }
-    const auto topic = hiddenPortTopic("output", port);
-    RCLCPP_WARN(
-      this->get_logger(),
-      "Filter '%s' output port '%s' has no configured topic; using hidden fallback '%s'",
-      node.id.c_str(),
-      port.c_str(),
-      topic.c_str());
-    parameters.push_back(rclcpp::Parameter{outputParameterName(port), topic});
   }
 
   appendPortQosParameters(parameters, "inputs", node.inputs);

@@ -121,24 +121,20 @@ same wrapper pattern applies to many groups.
 | --- | --- | --- |
 | `cloud` | input | Point cloud consumed by single-cloud filters. |
 | `cloud` | output | Filtered or merged point cloud. |
-| `indices` | output | Point indices for filters that can publish selected indices. |
+| `orig_cloud` | output | Original single-cloud filter input. |
 | `input_1` | input | First merger cloud input. |
 | `input_2` | input | Second merger cloud input. |
+| `orig_input_1` | output | Original first multi-input cloud. |
+| `orig_input_2` | output | Original second multi-input cloud. |
 
-Single-cloud filters expose one `cloud` input and two possible outputs:
-`cloud` and `indices`. Merger filters expose `input_1`, `input_2`, and one
-`cloud` output.
-
-`filter.output_indices` controls which result a supporting single-cloud filter
-publishes from its processing step. When it is `false`, the component publishes
-the filtered cloud on the `cloud` output. When it is `true`, the component
-publishes selected-point `PointIndices` data on the `indices` output instead of
-publishing a filtered cloud.
+Single-cloud filters expose one `cloud` input and `cloud`/`orig_cloud` outputs.
+Merger filters expose `input_1`, `input_2`, `cloud`, `orig_input_1`, and
+`orig_input_2`.
 
 ## Conceptual Node Example
 
-A `VoxelGridXYZI` filter node has one `PointXYZI` cloud input, one `PointXYZI`
-cloud output, and one `PointIndices` output:
+A `VoxelGridXYZI` filter node has one `PointXYZI` cloud input, one filtered
+`PointXYZI` cloud output, and one original-input `PointXYZI` output:
 
 ```yaml
 type: filter
@@ -147,19 +143,18 @@ package: pcl_filter_xyzi
 filter: VoxelGridXYZI
 component_class: pcl_filter_xyzi::VoxelGridXYZIComponent
 input_type: PointXYZI
-output_type: PointXYZI,PointIndices
+output_type: PointXYZI
 parameters:
   filter.leaf_size_x: 0.05
   filter.leaf_size_y: 0.05
   filter.leaf_size_z: 0.05
-  filter.output_indices: false
 inputs:
   cloud:
     reliability: best_effort
 outputs:
   cloud:
     reliability: best_effort
-  indices:
+  orig_cloud:
     reliability: reliable
 ```
 

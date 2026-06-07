@@ -67,9 +67,9 @@ def test_discovery_reads_filter_and_type_adapter_exports() -> None:
         voxel = filters[(package, f"VoxelGrid{suffix}")]
         assert voxel.component_class == f"{package}::VoxelGrid{suffix}Component"
         assert voxel.input_type == point_type
-        assert voxel.output_type == f"{point_type},PointIndices"
+        assert voxel.output_type == point_type
         assert voxel.input_ports == f"cloud:{point_type}"
-        assert voxel.output_ports == f"cloud:{point_type},indices:PointIndices,orig_cloud:{point_type}"
+        assert voxel.output_ports == f"cloud:{point_type},orig_cloud:{point_type}"
         merger = filters[(package, f"PointCloudMerger{suffix}")]
         assert merger.input_type == f"{point_type},{point_type}"
         assert merger.output_type == point_type
@@ -111,9 +111,9 @@ def test_discovery_exports_every_registered_filter_component() -> None:
             item = filters[(package, f"{name}{suffix}")]
             assert item.component_class == f"{package}::{name}{suffix}Component"
             assert item.input_type == point_type
-            assert item.output_type == f"{point_type},PointIndices"
+            assert item.output_type == point_type
             assert item.input_ports == f"cloud:{point_type}"
-            assert item.output_ports == f"cloud:{point_type},indices:PointIndices,orig_cloud:{point_type}"
+            assert item.output_ports == f"cloud:{point_type},orig_cloud:{point_type}"
 
         for name in expected_multi_input:
             item = filters[(package, f"{name}{suffix}")]

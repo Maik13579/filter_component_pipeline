@@ -32,164 +32,164 @@
       filter="VoxelGridXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="PassThroughXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="CropBoxXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="ApproximateVoxelGridXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="UniformSamplingXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="RandomSampleXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="GridMinimumXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="StatisticalOutlierRemovalXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="RadiusOutlierRemovalXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="ConditionalRemovalXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="ExtractIndicesXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="RemoveNaNXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="RemoveInfiniteXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="KeepOrganizedXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="FrustumCullingXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="CropSphereXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="ProjectInliersXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="PlaneClipperXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="MedianFilterXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="LocalMaximumXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="BilateralFilterXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="VoxelGridCovarianceXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="MorphologicalFilterXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="MovingLeastSquaresXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="PlaneModelFilterXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="SACSegmentationExtractXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="EuclideanClusterExtractXYZ"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
-      output="PointXYZ,PointIndices"
-      output_ports="cloud:PointXYZ,indices:PointIndices,orig_cloud:PointXYZ"/>
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ,orig_cloud:PointXYZ"/>
     <pcl_filter_component
       filter="PointCloudMergerXYZ"
       input="PointXYZ,PointXYZ"

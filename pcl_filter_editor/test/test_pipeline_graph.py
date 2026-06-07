@@ -28,7 +28,7 @@ def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
                 filter="VoxelGridXYZI",
                 component_class="pcl_filter_xyzi::VoxelGridXYZIComponent",
                 input_type="PointXYZI",
-                output_type="PointXYZI,PointIndices",
+                output_type="PointXYZI",
                 parameters={"filter.leaf_size_x": 0.1},
                 inputs={"cloud": {"qos": {"reliability": "reliable", "history": "keep_last", "depth": 8}}},
                 outputs={"cloud": {"qos": {"durability": "transient_local"}}},
@@ -67,7 +67,7 @@ def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
     loaded = load_graph(str(path))
 
     assert loaded.nodes[1].input_type == "PointXYZI"
-    assert loaded.nodes[1].output_type == "PointXYZI,PointIndices"
+    assert loaded.nodes[1].output_type == "PointXYZI"
     assert loaded.nodes[1].parameters["filter.leaf_size_x"] == 0.1
     assert loaded.nodes[1].inputs["cloud"]["qos"]["depth"] == 8
     assert loaded.nodes[1].outputs["cloud"]["qos"]["durability"] == "transient_local"
@@ -122,7 +122,6 @@ def test_graph_load_migrates_legacy_sync_parameters() -> None:
                     "output_type": "PointXYZI",
                     "parameters": {
                         "queue_size": 5,
-                        "filter.output_indices": False,
                     },
                     "sync": {"policy": "ExactTime"},
                 },
@@ -131,7 +130,6 @@ def test_graph_load_migrates_legacy_sync_parameters() -> None:
     )
 
     assert "queue_size" not in loaded.nodes[0].parameters
-    assert loaded.nodes[0].parameters["filter.output_indices"] is False
     assert loaded.nodes[0].sync["policy"] == "ExactTime"
     assert loaded.nodes[0].sync["queue_size"] == 5
 
@@ -247,7 +245,7 @@ def test_graph_rejects_topic_type_mismatch() -> None:
         graph.validate()
 
 
-def test_graph_accepts_indices_output_port() -> None:
+def test_graph_accepts_original_cloud_output_port() -> None:
     graph = Graph(
         nodes=[
             Node(
@@ -256,11 +254,11 @@ def test_graph_accepts_indices_output_port() -> None:
                 type="filter",
                 package="pcl_filter_xyzi",
                 filter="VoxelGridXYZI",
-                output_type="PointXYZI,PointIndices",
+                output_type="PointXYZI",
             ),
-            Node(id="/indices", type="topic", topic="/indices", input_type="PointIndices", output_type="PointIndices"),
+            Node(id="/original", type="topic", topic="/original", input_type="PointXYZI", output_type="PointXYZI"),
         ],
-        edges=[Edge(PortRef("VoxelGridXYZI_1", "indices"), PortRef("/indices", "in"))],
+        edges=[Edge(PortRef("VoxelGridXYZI_1", "orig_cloud"), PortRef("/original", "in"))],
     )
 
     graph.validate()
@@ -325,7 +323,7 @@ def test_graph_rejects_duplicate_filter_output_port() -> None:
                 package="pcl_filter_xyzi",
                 filter="VoxelGridXYZI",
                 input_type="PointXYZI",
-                output_type="PointXYZI,PointIndices",
+                output_type="PointXYZI",
             ),
             Node(id="/a", type="topic", topic="/a", input_type="PointXYZI", output_type="PointXYZI"),
             Node(id="/b", type="topic", topic="/b", input_type="PointXYZI", output_type="PointXYZI"),
@@ -350,8 +348,8 @@ def test_graph_accepts_explicit_repeated_output_ports() -> None:
                 package="pcl_filter_xyzi",
                 filter="VoxelGridXYZI",
                 input_type="PointXYZI",
-                output_type="PointXYZI,PointIndices,PointXYZI",
-                output_ports="cloud:PointXYZI,indices:PointIndices,orig_cloud:PointXYZI",
+                output_type="PointXYZI,PointXYZI",
+                output_ports="cloud:PointXYZI,orig_cloud:PointXYZI",
             ),
             Node(id="/filtered", type="topic", topic="/filtered", input_type="PointXYZI", output_type="PointXYZI"),
             Node(id="/original", type="topic", topic="/original", input_type="PointXYZI", output_type="PointXYZI"),

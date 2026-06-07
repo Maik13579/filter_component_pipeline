@@ -34,22 +34,20 @@ class BinaryCloudFilterComponent : public PclFilterComponentBase<PointT, FilterT
   static std::array<PortDescriptor, 2> inputPorts()
   {
     return {{
-      Base::template inputPort<CloudAdapter>("input_1", "/points/input_a", "First input point cloud topic."),
-      Base::template inputPort<CloudAdapter>("input_2", "/points/input_b", "Second input point cloud topic."),
+      Base::template inputPort<CloudAdapter>("input_1", "First input point cloud topic."),
+      Base::template inputPort<CloudAdapter>("input_2", "Second input point cloud topic."),
     }};
   }
 
   static std::array<PortDescriptor, 3> outputPorts()
   {
     return {{
-      Base::template outputPort<CloudAdapter>("cloud", "/points/output", "Filtered point cloud topic."),
+      Base::template outputPort<CloudAdapter>("cloud", "Filtered point cloud topic."),
       Base::template outputPort<CloudAdapter>(
         "orig_input_1",
-        "/points/original_a",
         "Original first input point cloud topic."),
       Base::template outputPort<CloudAdapter>(
         "orig_input_2",
-        "/points/original_b",
         "Original second input point cloud topic."),
     }};
   }
@@ -59,7 +57,7 @@ class BinaryCloudFilterComponent : public PclFilterComponentBase<PointT, FilterT
     this->filter_.configure(detail::readParams<FilterT>(*this));
   }
 
-  void processInputs() override
+  void process() override
   {
     auto first = this->template takeInput<CloudAdapter>("input_1");
     auto second = this->template takeInput<CloudAdapter>("input_2");
@@ -71,8 +69,8 @@ class BinaryCloudFilterComponent : public PclFilterComponentBase<PointT, FilterT
     output->header = first->header;
     this->filter_.filter(*first, *second, *output);
     this->template publish<CloudAdapter>("cloud", std::move(output));
-    this->publishCloud("orig_input_1", std::move(first));
-    this->publishCloud("orig_input_2", std::move(second));
+    this->template publish<CloudAdapter>("orig_input_1", std::move(first));
+    this->template publish<CloudAdapter>("orig_input_2", std::move(second));
   }
 };
 

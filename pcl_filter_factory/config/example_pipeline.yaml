@@ -13,20 +13,17 @@ nodes:
     filter: VoxelGridXYZI
     component_class: pcl_filter_xyzi::VoxelGridXYZIComponent
     input_type: PointXYZI
-    output_type: PointXYZI,PointIndices
+    output_type: PointXYZI
     parameters:
       filter.leaf_size_x: 0.1
       filter.leaf_size_y: 0.1
       filter.leaf_size_z: 0.1
       filter.invert: false
-      filter.output_indices: false
     inputs:
       cloud:
         qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
     outputs:
       cloud:
-        qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
-      indices:
         qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
     position: {x: 280.0, y: 160.0}
   - type: topic
@@ -40,7 +37,7 @@ nodes:
     filter: CropBoxXYZI
     component_class: pcl_filter_xyzi::CropBoxXYZIComponent
     input_type: PointXYZI
-    output_type: PointXYZI,PointIndices
+    output_type: PointXYZI
     parameters:
       filter.min_x: -10.0
       filter.min_y: -10.0
@@ -49,14 +46,11 @@ nodes:
       filter.max_y: 10.0
       filter.max_z: 3.0
       filter.invert: false
-      filter.output_indices: false
     inputs:
       cloud:
         qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
     outputs:
       cloud:
-        qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
-      indices:
         qos: {reliability: best_effort, history: keep_last, depth: 5, durability: volatile}
     position: {x: 280.0, y: 480.0}
   - type: topic

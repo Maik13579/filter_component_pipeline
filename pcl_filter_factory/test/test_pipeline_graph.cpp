@@ -34,7 +34,7 @@ nodes:
     package: pcl_filter_xyzi
     filter: VoxelGridXYZI
     input_type: PointXYZI
-    output_type: PointXYZI,PointIndices
+    output_type: PointXYZI
     parameters:
       filter.leaf_size_x: 0.1
     inputs:
@@ -71,7 +71,7 @@ edges:
   ASSERT_EQ(graph.nodes.size(), 4U);
   EXPECT_EQ(graph.nodes[1].component_class, "pcl_filter_xyzi::VoxelGridXYZIComponent");
   EXPECT_EQ(graph.nodes[1].input_type, "PointXYZI");
-  EXPECT_EQ(graph.nodes[1].output_type, "PointXYZI,PointIndices");
+  EXPECT_EQ(graph.nodes[1].output_type, "PointXYZI");
   EXPECT_EQ(graph.nodes[1].parameters.at("filter.leaf_size_x"), "0.1");
   EXPECT_EQ(graph.nodes[1].inputs.at("cloud").at("depth"), "8");
   EXPECT_EQ(graph.nodes[1].inputs.at("cloud").at("reliability"), "reliable");
@@ -109,7 +109,7 @@ edges:
     std::runtime_error);
 }
 
-TEST(PipelineGraph, AcceptsIndicesOutputPort)
+TEST(PipelineGraph, AcceptsOriginalCloudOutputPort)
 {
   const auto path = writeTempPipeline(R"(
 version: 1
@@ -118,20 +118,20 @@ nodes:
     name: VoxelGridXYZI_1
     package: pcl_filter_xyzi
     filter: VoxelGridXYZI
-    output_type: PointXYZI,PointIndices
+    output_type: PointXYZI
   - type: topic
-    topic: /indices
-    input_type: PointIndices
-    output_type: PointIndices
+    topic: /original
+    input_type: PointXYZI
+    output_type: PointXYZI
 edges:
-  - from: {node: VoxelGridXYZI_1, port: indices}
-    to: {node: /indices, port: in}
+  - from: {node: VoxelGridXYZI_1, port: orig_cloud}
+    to: {node: /original, port: in}
 )");
 
   const auto graph = pcl_filter_factory::pipeline::loadPipelineGraph(path);
 
   ASSERT_EQ(graph.edges.size(), 1U);
-  EXPECT_EQ(graph.edges[0].from.port, "indices");
+  EXPECT_EQ(graph.edges[0].from.port, "orig_cloud");
 }
 
 TEST(PipelineGraph, AcceptsRepeatedInputPorts)
@@ -208,7 +208,7 @@ nodes:
     package: pcl_filter_xyzi
     filter: VoxelGridXYZI
     input_type: PointXYZI
-    output_type: PointXYZI,PointIndices
+    output_type: PointXYZI
   - type: topic
     topic: /a
     input_type: PointXYZI
@@ -239,8 +239,8 @@ nodes:
     package: pcl_filter_xyzi
     filter: VoxelGridXYZI
     input_type: PointXYZI
-    output_type: PointXYZI,PointIndices,PointXYZI
-    output_ports: cloud:PointXYZI,indices:PointIndices,orig_cloud:PointXYZI
+    output_type: PointXYZI,PointXYZI
+    output_ports: cloud:PointXYZI,orig_cloud:PointXYZI
   - type: topic
     topic: /filtered
     input_type: PointXYZI
@@ -259,7 +259,7 @@ edges:
   const auto graph = pcl_filter_factory::pipeline::loadPipelineGraph(path);
 
   ASSERT_EQ(graph.edges.size(), 2U);
-  EXPECT_EQ(graph.nodes[0].output_ports, "cloud:PointXYZI,indices:PointIndices,orig_cloud:PointXYZI");
+  EXPECT_EQ(graph.nodes[0].output_ports, "cloud:PointXYZI,orig_cloud:PointXYZI");
 }
 
 TEST(PipelineGraph, RejectsDuplicateTopicNodes)

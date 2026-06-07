@@ -29,7 +29,6 @@ class VoxelGridComponent
 public:
   using Base = PclFilterComponentBase<PointT, filters::VoxelGridFilter<PointT>>;
   using CloudAdapter = typename Base::CloudAdapter;
-  using IndicesAdapter = typename Base::IndicesAdapter;
   using PortDescriptor = typename Base::PortDescriptor;
   using StampedCloud = typename Base::StampedCloud;
 
@@ -68,12 +67,7 @@ public:
       *this,
       "filter.invert",
       false,
-      makeParameterDescriptor("Return points or indices outside the selected voxel representatives."));
-    declareParameterIfNotDeclared(
-      *this,
-      "filter.output_indices",
-      false,
-      makeParameterDescriptor("Publish filtered point indices instead of a filtered point cloud."));
+      makeParameterDescriptor("Return points outside the selected voxel representatives."));
   }
 
 protected:
@@ -82,25 +76,18 @@ protected:
     return {{
       Base::template inputPort<CloudAdapter>(
         "cloud",
-        "/points/input",
         "Input point cloud topic."),
     }};
   }
 
-  static std::array<PortDescriptor, 3> outputPorts()
+  static std::array<PortDescriptor, 2> outputPorts()
   {
     return {{
       Base::template outputPort<CloudAdapter>(
         "cloud",
-        "/points/output",
         "Filtered point cloud topic."),
-      Base::template outputPort<IndicesAdapter>(
-        "indices",
-        "/points/indices",
-        "Filtered point indices topic."),
       Base::template outputPort<CloudAdapter>(
         "orig_cloud",
-        "/points/original",
         "Original input point cloud topic."),
     }};
   }
@@ -112,25 +99,21 @@ protected:
     params.leaf_size_y = static_cast<float>(getParameter<double>(*this, "filter.leaf_size_y"));
     params.leaf_size_z = static_cast<float>(getParameter<double>(*this, "filter.leaf_size_z"));
     params.invert = getParameter<bool>(*this, "filter.invert");
-    output_indices_ = getParameter<bool>(*this, "filter.output_indices");
     this->filter_.configure(params);
   }
 
-  void processCloud(std::unique_ptr<StampedCloud> input) override
+  void process() override
   {
-    if (output_indices_) {
-      this->publishFilterIndices("indices", *input);
-      this->publishCloud("orig_cloud", std::move(input));
+    auto input = this->template takeInput<CloudAdapter>("cloud");
+    if (!input) {
       return;
     }
     auto output = std::make_unique<StampedCloud>();
     output->header = input->header;
     this->filter_.filter(*input, *output);
-    this->publishCloud(std::move(output));
-    this->publishCloud("orig_cloud", std::move(input));
+    this->template publish<CloudAdapter>("cloud", std::move(output));
+    this->template publish<CloudAdapter>("orig_cloud", std::move(input));
   }
-
-  bool output_indices_{false};
 };
 
 }  // namespace pcl_filter_components::ros

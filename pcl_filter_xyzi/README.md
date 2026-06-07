@@ -26,9 +26,9 @@ Registered components are exported in the same groups as the source tree:
 
 The filters in this package have the same conceptual ports and parameters as the
 other concrete point-type packages. Single-cloud filters use `cloud` input,
-`cloud` output, and optional `indices` output; `PointCloudMergerXYZI` uses
-`input_1`, `input_2`, and `cloud`. Saved graph filter nodes identify this
-package and one registered component class:
+`cloud` and `orig_cloud` outputs; `PointCloudMergerXYZI` uses
+`input_1`, `input_2`, `cloud`, `orig_input_1`, and `orig_input_2`.
+Saved graph filter nodes identify this package and one registered component class:
 
 ```yaml
 package: pcl_filter_xyzi

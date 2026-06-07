@@ -35,8 +35,8 @@ The graph has three main concepts:
 - Filter components: lifecycle components such as `VoxelGridXYZI` or
   `PassThroughXYZ` that process point cloud data.
 - Ports: named inputs and outputs on a filter component. Single-cloud filters
-  use the `cloud` input and the `cloud` and `indices` outputs. Merger filters
-  use `input_1`, `input_2`, and `cloud`.
+  use the `cloud` input and `cloud`/`orig_cloud` outputs. Merger filters
+  use `input_1`, `input_2`, `cloud`, `orig_input_1`, and `orig_input_2`.
 - Topic nodes: endpoints and intermediate bindings that assign ROS topic names
   to graph edges.
 
@@ -99,7 +99,7 @@ Concrete packages export filters with package metadata similar to:
 <pcl_filter_component
   filter="VoxelGridXYZI"
   input="PointXYZI"
-  output="PointXYZI,PointIndices"/>
+  output="PointXYZI"/>
 ```
 
 They also export logical cloud aliases:
@@ -119,9 +119,9 @@ available as `XYZ`, `XYZI`, `XYZRGB`, and `XYZRGBA` variants, such as
 `pcl_filter_xyzrgb` and `pcl_filter_xyzrgba`; intensity filters are exported
 only by `pcl_filter_xyzi`.
 
-Single-cloud filters use one `cloud` input and can publish either a filtered
-cloud or `PointIndices`. Multi-input filters use `input_1`, `input_2`, and one
-`cloud` output.
+Single-cloud filters use one `cloud` input and publish `cloud` plus
+`orig_cloud` outputs. Multi-input filters use `input_1`, `input_2`, and publish
+`cloud`, `orig_input_1`, and `orig_input_2` outputs.
 
 ### Downsampling
 
@@ -225,12 +225,11 @@ nodes:
     filter: VoxelGridXYZI
     component_class: pcl_filter_xyzi::VoxelGridXYZIComponent
     input_type: PointXYZI
-    output_type: PointXYZI,PointIndices
+    output_type: PointXYZI
     parameters:
       filter.leaf_size_x: 0.1
       filter.leaf_size_y: 0.1
       filter.leaf_size_z: 0.1
-      filter.output_indices: false
   - type: topic
     name: /points/output
     topic_type: PointXYZI

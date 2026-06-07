@@ -1629,6 +1629,14 @@ class PipelineEditor(Plugin):
                 line.setFrameShadow(QFrame.Sunken)
                 form.addRow(line)
             topic = self._connected_topic(node, port, outgoing)
+            topic_parameter = (
+                f"outputs.{port}.topic" if outgoing else f"inputs.{port}.topic"
+            )
+            description = self._parameter_description(node, topic_parameter)
+            form.addRow(
+                f"{port} description",
+                self._readonly_field(description or "No description."),
+            )
             form.addRow(f"{port} type", self._readonly_field(stream_type or "unknown"))
             form.addRow(f"{port} topic", self._readonly_field(topic or "unconnected"))
             qos = dict(self._default_qos())

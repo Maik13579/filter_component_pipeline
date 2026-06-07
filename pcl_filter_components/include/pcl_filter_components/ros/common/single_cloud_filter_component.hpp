@@ -8,7 +8,6 @@
 #include <memory>
 #include <string>
 #include <type_traits>
-#include <vector>
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -33,29 +32,10 @@ struct HasInvertParam : std::false_type {};
 template <typename FilterT>
 struct HasInvertParam<FilterT, std::void_t<decltype(std::declval<typename FilterT::Params>().invert)> > : std::true_type {};
 
-template <typename FilterT, typename = void>
-struct HasFilterIndices : std::false_type {};
-
-template <typename FilterT>
-using FilterIndicesExpression = decltype(
-  std::declval<FilterT>().filterIndices(
-    std::declval<const typename FilterT::Cloud &>(),
-    std::declval<std::vector<int> &>()));
-
-template <typename FilterT>
-struct HasFilterIndices<FilterT, std::void_t<FilterIndicesExpression<FilterT> > >
-: std::true_type {};
-
 template <typename NodeT>
 void declareInvert(NodeT & node)
 {
   declareParameterIfNotDeclared(node, "filter.invert", false, makeParameterDescriptor("Invert the selected points."));
-}
-
-template <typename NodeT>
-void declareOutputIndices(NodeT & node)
-{
-  declareParameterIfNotDeclared(node, "filter.output_indices", false, makeParameterDescriptor("Publish filtered point indices instead of a filtered point cloud."));
 }
 
 template <typename FilterT, typename NodeT>
@@ -185,10 +165,6 @@ void declareParams(NodeT & node)
   if constexpr (HasInvertParam<FilterT>::value)
   {
     declareInvert(node);
-  }
-  if constexpr (HasFilterIndices<FilterT>::value)
-  {
-    declareOutputIndices(node);
   }
 }
 
@@ -332,7 +308,6 @@ class SingleCloudFilterComponent : public PclFilterComponentBase<PointT, FilterT
 public:
   using Base = PclFilterComponentBase<PointT, FilterT>;
   using CloudAdapter = typename Base::CloudAdapter;
-  using IndicesAdapter = typename Base::IndicesAdapter;
   using PortDescriptor = typename Base::PortDescriptor;
   using StampedCloud = typename Base::StampedCloud;
 
@@ -346,24 +321,18 @@ protected:
   static std::array<PortDescriptor, 1> inputPorts()
   {
     return {{
-      Base::template inputPort<CloudAdapter>("cloud", "/points/input", "Input point cloud topic."),
+      Base::template inputPort<CloudAdapter>("cloud", "Input point cloud topic."),
     }};
   }
 
-  static std::array<PortDescriptor, 3> outputPorts()
+  static std::array<PortDescriptor, 2> outputPorts()
   {
     return {{
       Base::template outputPort<CloudAdapter>(
         "cloud",
-        "/points/output",
         "Filtered point cloud topic."),
-      Base::template outputPort<IndicesAdapter>(
-        "indices",
-        "/points/indices",
-        "Filtered point indices topic."),
       Base::template outputPort<CloudAdapter>(
         "orig_cloud",
-        "/points/original",
         "Original input point cloud topic."),
     }};
   }
@@ -371,31 +340,20 @@ protected:
   void configureFilter() override
   {
     this->filter_.configure(detail::readParams<FilterT>(*this));
-    if constexpr (detail::HasFilterIndices<FilterT>::value)
-    {
-      output_indices_ = getParameter<bool>(*this, "filter.output_indices");
-    }
   }
 
-  void processCloud(std::unique_ptr<StampedCloud> input) override
+  void process() override
   {
-    if constexpr (detail::HasFilterIndices<FilterT>::value)
-    {
-      if (output_indices_)
-      {
-        this->publishFilterIndices("indices", *input);
-        this->publishCloud("orig_cloud", std::move(input));
-        return;
-      }
+    auto input = this->template takeInput<CloudAdapter>("cloud");
+    if (!input) {
+      return;
     }
     auto output = std::make_unique<StampedCloud>();
     output->header = input->header;
     this->filter_.filter(*input, *output);
-    this->publishCloud(std::move(output));
-    this->publishCloud("orig_cloud", std::move(input));
+    this->template publish<CloudAdapter>("cloud", std::move(output));
+    this->template publish<CloudAdapter>("orig_cloud", std::move(input));
   }
-
-  bool output_indices_{false};
 };
 
 }  // namespace pcl_filter_components::ros::common
