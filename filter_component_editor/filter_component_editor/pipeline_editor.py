@@ -1787,16 +1787,12 @@ class PipelineEditor(Plugin):
 
     def _sync_live_pipeline(self) -> None:
         try:
-            missing = self._missing_filter_ports()
             desired = self._live_component_specs()
             self.graph.validate(message_type_by_logical=self.message_type_by_logical)
             self.live_runtime.sync(desired)
             self._verify_live_pipeline_loaded(desired)
             if desired:
-                status = f"Live pipeline running with {len(desired)} component(s)."
-                if missing:
-                    status += " Unconnected ports use hidden fallback topics."
-                self.status.setText(status)
+                self.status.setText(f"Live pipeline running with {len(desired)} component(s).")
             self.last_live_runtime_error = ""
         except Exception as error:
             message = str(error)
@@ -1836,13 +1832,15 @@ class PipelineEditor(Plugin):
         parameters = dict(node.parameters)
         for port, _stream_type, _label in self._port_options(node, False):
             topic = self._connected_topic(node, port, False)
-            parameters[f"inputs.{port}.topic"] = topic or self._hidden_port_topic("input", port)
+            if topic:
+                parameters[f"inputs.{port}.topic"] = topic
             qos = (node.inputs.get(port, {}) or {}).get("qos", {}) or {}
             for key, value in qos.items():
                 parameters[f"inputs.{port}.qos.{key}"] = value
         for port, _stream_type, _label in self._port_options(node, True):
             topic = self._connected_topic(node, port, True)
-            parameters[f"outputs.{port}.topic"] = topic or self._hidden_port_topic("output", port)
+            if topic:
+                parameters[f"outputs.{port}.topic"] = topic
             qos = (node.outputs.get(port, {}) or {}).get("qos", {}) or {}
             for key, value in qos.items():
                 parameters[f"outputs.{port}.qos.{key}"] = value
@@ -1850,9 +1848,6 @@ class PipelineEditor(Plugin):
             if self._filter_has_multiple_inputs(node):
                 parameters[f"sync.{key}"] = value
         return parameters
-
-    def _hidden_port_topic(self, direction: str, port: str) -> str:
-        return f"~/_{direction}/{self._topic_name_part_for_text(port) or 'port'}"
 
     def _sanitize_filter_parameters(self, node: Node) -> None:
         if node.type != "filter":
@@ -1913,21 +1908,6 @@ class PipelineEditor(Plugin):
             item.node.position = {"x": float(item.pos().x()), "y": float(item.pos().y())}
         self.graph.editor = {"orientation": "top_down" if self.top_down_mode else "left_right"}
 
-    def _missing_filter_ports(self) -> list[str]:
-        missing: list[str] = []
-        for node in self.graph.nodes:
-            if node.type != "filter":
-                continue
-            connected_inputs = self._occupied_input_ports(node)
-            for port, _stream_type, _label in self._port_options(node, False):
-                if port not in connected_inputs:
-                    missing.append(f"{node.id}:{port} input")
-            connected_outputs = self._occupied_output_ports(node)
-            for port, _stream_type, _label in self._port_options(node, True):
-                if port not in connected_outputs:
-                    missing.append(f"{node.id}:{port} output")
-        return missing
-
     def _refresh_live_filter_parameters_for_save(self) -> None:
         for node in self.graph.nodes:
             if node.type != "filter":
@@ -1945,19 +1925,6 @@ class PipelineEditor(Plugin):
 
     def _save(self) -> None:
         self._sync_positions()
-        missing = self._missing_filter_ports()
-        if missing:
-            result = QMessageBox.warning(
-                self.widget,
-                "Unconnected Ports",
-                "The following filter ports are unconnected:\n"
-                + "\n".join(missing)
-                + "\n\nHidden fallback topics will be used for these ports. Save anyway?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            )
-            if result != QMessageBox.Yes:
-                return
         path, _ = QFileDialog.getSaveFileName(self.widget, "Save Pipeline", "", "YAML (*.yaml *.yml)")
         if path:
             if not path.endswith((".yaml", ".yml")):

@@ -104,28 +104,6 @@ std::string outputParameterName(const std::string & port)
   return "outputs." + normalizedOutputPort(port) + ".topic";
 }
 
-std::string topicNamePartForText(const std::string & text)
-{
-  auto name = text;
-  if (name.rfind("~/", 0) == 0) {
-    name.erase(0, 2);
-  }
-  while (!name.empty() && name.front() == '/') {
-    name.erase(name.begin());
-  }
-  while (!name.empty() && name.back() == '/') {
-    name.pop_back();
-  }
-  std::replace(name.begin(), name.end(), '/', '_');
-  std::replace(name.begin(), name.end(), '-', '_');
-  return name.empty() ? "node" : name;
-}
-
-std::string sharedEdgeTopic(const PipelineEdge & edge)
-{
-  return "/" + topicNamePartForText(edge.from.node) + "_" + topicNamePartForText(edge.to.node);
-}
-
 void appendPortQosParameters(
   std::vector<rclcpp::Parameter> & parameters,
   const std::string & direction,
@@ -327,7 +305,7 @@ std::vector<std::pair<std::string, std::string>> PipelineFactoryNode::inputTopic
     }
     const auto topic = source->type == "topic" ?
       source->topic :
-      (edge.topic.empty() ? sharedEdgeTopic(edge) : edge.topic);
+      edge.topic;
     const auto index = inputIndexForPort(edge.to.port, topics.size());
     if (topics.size() <= index) {
       topics.resize(index + 1U);
@@ -353,9 +331,7 @@ std::vector<std::pair<std::string, std::string>> PipelineFactoryNode::outputTopi
       topics.push_back({normalizedOutputPort(edge.from.port), target->topic});
       continue;
     }
-    topics.push_back(
-      {normalizedOutputPort(edge.from.port),
-        edge.topic.empty() ? sharedEdgeTopic(edge) : edge.topic});
+    topics.push_back({normalizedOutputPort(edge.from.port), edge.topic});
   }
   return topics;
 }
