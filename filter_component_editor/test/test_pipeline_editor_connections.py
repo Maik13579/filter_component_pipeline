@@ -442,8 +442,10 @@ def test_filter_chain_row_texts_include_configured_filters() -> None:
         "Type: RosFilterChainXYZI",
         "Package: pcl_filter_components_filter_chain",
         "Filters:",
-        "1. voxel (pcl_filters/VoxelGridXYZI)",
-        "2. pass (pcl_filters/PassThroughXYZI)",
+        "1. voxel",
+        "   pcl_filters/VoxelGridXYZI",
+        "2. pass",
+        "   pcl_filters/PassThroughXYZI",
     ]
 
 

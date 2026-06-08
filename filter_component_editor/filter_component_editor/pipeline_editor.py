@@ -659,10 +659,9 @@ class PipelineEditor(Plugin):
         for index, entry in enumerate(entries, start=1):
             name = str(entry.get("name", "")).strip()
             plugin_type = str(entry.get("type", "")).strip()
-            label = name or plugin_type or "unnamed"
+            rows.append(f"{index}. {name or plugin_type or 'unnamed'}")
             if plugin_type:
-                label = f"{label} ({plugin_type})"
-            rows.append(f"{index}. {label}")
+                rows.append(f"   {plugin_type}")
         return rows
 
     def _unique_chain_filter_name(self, plugin_name: str, entries: list[dict[str, object]]) -> str:
