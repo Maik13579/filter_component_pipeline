@@ -1,0 +1,25 @@
+// Copyright 2026 Maik Knof
+// SPDX-License-Identifier: Apache-2.0
+
+#include <rclcpp_components/register_node_macro.hpp>
+
+#include "pcl_filter_components_filter_chain/ros/filter_chain_components.hpp"
+
+namespace pcl_filter_components_filter_chain
+{
+
+using RosFilterChainXYZComponent = ros::RosFilterChainXYZComponent;
+using RosFilterChainXYZIComponent = ros::RosFilterChainXYZIComponent;
+using RosFilterChainXYZRGBComponent = ros::RosFilterChainXYZRGBComponent;
+using RosFilterChainXYZRGBAComponent = ros::RosFilterChainXYZRGBAComponent;
+using RosFilterChainPointNormalComponent = ros::RosFilterChainPointNormalComponent;
+using RosFilterChainPointIndicesComponent = ros::RosFilterChainPointIndicesComponent;
+
+}  // namespace pcl_filter_components_filter_chain
+
+RCLCPP_COMPONENTS_REGISTER_NODE(pcl_filter_components_filter_chain::RosFilterChainXYZComponent)
+RCLCPP_COMPONENTS_REGISTER_NODE(pcl_filter_components_filter_chain::RosFilterChainXYZIComponent)
+RCLCPP_COMPONENTS_REGISTER_NODE(pcl_filter_components_filter_chain::RosFilterChainXYZRGBComponent)
+RCLCPP_COMPONENTS_REGISTER_NODE(pcl_filter_components_filter_chain::RosFilterChainXYZRGBAComponent)
+RCLCPP_COMPONENTS_REGISTER_NODE(pcl_filter_components_filter_chain::RosFilterChainPointNormalComponent)
+RCLCPP_COMPONENTS_REGISTER_NODE(pcl_filter_components_filter_chain::RosFilterChainPointIndicesComponent)

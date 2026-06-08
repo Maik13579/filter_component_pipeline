@@ -16,6 +16,8 @@ This directory groups the PCL-specific packages.
   filter metadata, and registered components.
 - [pcl_filter_components_xyzrgba](pcl_filter_components_xyzrgba/README.md): `PointXYZRGBA` aliases,
   filter metadata, and registered components.
+- [pcl_filter_components_filter_chain](pcl_filter_components_filter_chain/README.md): wrappers for
+  upstream [`ros/filters`](https://github.com/ros/filters) `filters::FilterChain<T>` components.
 - [pcl_filter_components_tests](pcl_filter_components_tests/README.md): repository validation coverage
   for discovery, registration, and example graph parsing.
 
@@ -25,6 +27,7 @@ This directory groups the PCL-specific packages.
 pcl_filter_components_type_adapters
   -> pcl_filter_components
     -> pcl_filter_components_xyz / pcl_filter_components_xyzi / pcl_filter_components_xyzrgb / pcl_filter_components_xyzrgba
+    -> pcl_filter_components_filter_chain
       -> pcl_filter_components_tests
 ```
 

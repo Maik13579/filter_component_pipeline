@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pcl_filter_components_filter_chain</name>
+  <version>0.1.0</version>
+  <description>ROS filters::FilterChain components for PCL filter component streams.</description>
+  <maintainer email="maik.knof@gmx.de">Maik Knof</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>filter_component_base</depend>
+  <depend>filter_component_synchronizer</depend>
+  <depend>filters</depend>
+  <depend>pcl_filter_components_type_adapters</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>sensor_msgs</depend>
+  <depend>pcl_msgs</depend>
+  <depend>pcl_conversions</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <filter_component
+      filter="RosFilterChainXYZ"
+      input="PointXYZ"
+      input_ports="cloud:PointXYZ"
+      output="PointXYZ"
+      output_ports="cloud:PointXYZ"/>
+    <filter_component
+      filter="RosFilterChainXYZI"
+      input="PointXYZI"
+      input_ports="cloud:PointXYZI"
+      output="PointXYZI"
+      output_ports="cloud:PointXYZI"/>
+    <filter_component
+      filter="RosFilterChainXYZRGB"
+      input="PointXYZRGB"
+      input_ports="cloud:PointXYZRGB"
+      output="PointXYZRGB"
+      output_ports="cloud:PointXYZRGB"/>
+    <filter_component
+      filter="RosFilterChainXYZRGBA"
+      input="PointXYZRGBA"
+      input_ports="cloud:PointXYZRGBA"
+      output="PointXYZRGBA"
+      output_ports="cloud:PointXYZRGBA"/>
+    <filter_component
+      filter="RosFilterChainPointNormal"
+      input="PointNormal"
+      input_ports="cloud:PointNormal"
+      output="PointNormal"
+      output_ports="cloud:PointNormal"/>
+    <filter_component
+      filter="RosFilterChainPointIndices"
+      input="PointIndices"
+      input_ports="indices:PointIndices"
+      output="PointIndices"
+      output_ports="indices:PointIndices"/>
+  </export>
+</package>

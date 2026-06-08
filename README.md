@@ -17,6 +17,7 @@ leave, or connect parts of the graph. Topic nodes are not loaded as components.
 
 - [Pipeline Model](#pipeline-model)
 - [Packages](#packages)
+- [ROS Filters Chains](#ros-filters-chains)
 - [Architecture](#architecture)
 - [Editor](#editor)
 - [Graph YAML](#graph-yaml)
@@ -50,6 +51,13 @@ filters, topic types, and component classes.
   pipeline authoring and validation.
 - [pcl](pcl/README.md): PCL-specific algorithms, type adapters, point-type
   component packages, and PCL validation tests.
+
+## ROS Filters Chains
+
+The framework can also host upstream [`ros/filters`](https://github.com/ros/filters)
+`filters::FilterChain<T>` pipelines as regular lifecycle filter components.
+Use `pcl_filter_components_filter_chain` for the PCL chain components and
+configure the chain parameters under the component's `filter_chain` prefix.
 
 ## Architecture
 

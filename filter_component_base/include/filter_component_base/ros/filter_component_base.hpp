@@ -206,12 +206,19 @@ protected:
   {
     (void)previous_state;
 
-    readPortTopics();
+    try {
+      readPortTopics();
 
-    configure();
+      configure();
 
-    active_ = false;
-    configureInterfaces();
+      active_ = false;
+      configureInterfaces();
+    } catch (const std::exception & exception) {
+      cleanupInterfaces();
+      active_ = false;
+      RCLCPP_ERROR(get_logger(), "Failed to configure filter component: %s", exception.what());
+      return CallbackReturn::FAILURE;
+    }
 
     return CallbackReturn::SUCCESS;
   }

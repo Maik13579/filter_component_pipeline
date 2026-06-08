@@ -56,6 +56,15 @@ PACKAGE_FILTERS = {
     ),
 }
 
+FILTER_CHAIN_COMPONENTS = {
+    "RosFilterChainXYZ": ("PointXYZ", "cloud"),
+    "RosFilterChainXYZI": ("PointXYZI", "cloud"),
+    "RosFilterChainXYZRGB": ("PointXYZRGB", "cloud"),
+    "RosFilterChainXYZRGBA": ("PointXYZRGBA", "cloud"),
+    "RosFilterChainPointNormal": ("PointNormal", "cloud"),
+    "RosFilterChainPointIndices": ("PointIndices", "indices"),
+}
+
 
 def test_discovery_reads_filter_and_type_adapter_exports() -> None:
     discovery = discover_filters()
@@ -144,6 +153,35 @@ def test_components_register_in_rclcpp_components_index() -> None:
         "IntensityRangeFilter",
     }:
         assert f"pcl_filter_components_xyzi::{filter_name}XYZIComponent" in registered
+
+
+def test_filter_chain_components_are_discoverable() -> None:
+    discovery = discover_filters()
+    filters = {(item.package, item.filter): item for item in discovery.filters}
+
+    for filter_name, (point_type, port) in FILTER_CHAIN_COMPONENTS.items():
+        item = filters[("pcl_filter_components_filter_chain", filter_name)]
+        assert item.component_class == f"pcl_filter_components_filter_chain::{filter_name}Component"
+        assert item.input_type == point_type
+        assert item.output_type == point_type
+        assert item.input_ports == f"{port}:{point_type}"
+        assert item.output_ports == f"{port}:{point_type}"
+
+
+def test_filter_chain_components_register_in_rclcpp_components_index() -> None:
+    prefix = Path(get_package_prefix("pcl_filter_components_filter_chain"))
+    resource = (
+        prefix
+        / "share"
+        / "ament_index"
+        / "resource_index"
+        / "rclcpp_components"
+        / "pcl_filter_components_filter_chain"
+    )
+    registered = resource.read_text(encoding="utf-8")
+
+    for filter_name in FILTER_CHAIN_COMPONENTS:
+        assert f"pcl_filter_components_filter_chain::{filter_name}Component" in registered
 
 
 def test_factory_installs_example_pipeline() -> None:

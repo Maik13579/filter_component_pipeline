@@ -12,6 +12,7 @@
   <exec_depend>filter_component_base</exec_depend>
   <exec_depend>pcl_filter_components_type_adapters</exec_depend>
   <exec_depend>pcl_filter_components</exec_depend>
+  <exec_depend>pcl_filter_components_filter_chain</exec_depend>
   <exec_depend>pcl_filter_components_xyzi</exec_depend>
   <exec_depend>filter_component_factory</exec_depend>
   <exec_depend>filter_component_editor</exec_depend>

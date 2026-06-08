@@ -121,3 +121,32 @@ parameters automatically when the input descriptor array has more than one
 entry. For multiple outputs, declare each output with the adapter type that
 matches the message it publishes, such as a cloud adapter for `cloud` and a
 point-indices adapter for `indices`.
+
+## Wrapping ROS Filter Chains
+
+`filter_component_base::ros::FilterChainComponent<AdapterT, TraitsT>` wraps the
+upstream [`ros/filters`](https://github.com/ros/filters) `filters::FilterChain<T>`
+API as a single-input, single-output lifecycle component. The ROS boundary still
+uses the typed adapter and `std::unique_ptr` messages. The chain itself uses the
+official value-based `update(const T &, T &)` API, so values may be copied during
+chain processing.
+
+`AdapterT` is any `rclcpp::TypeAdapter` type used by the component ports.
+`TraitsT` supplies the component contract:
+
+```cpp
+struct MyChainTraits
+{
+  static const char * nodeName() {return "my_filter_chain";}
+  static const char * dataType() {return "pcl::PointCloud<pcl::PointXYZ>";}
+  static const char * inputPort() {return "cloud";}
+  static const char * outputPort() {return "cloud";}
+  static const char * defaultParamPrefix() {return "filter_chain";}
+};
+```
+
+The component declares `filter_chain.param_prefix`, defaulting to
+`TraitsT::defaultParamPrefix()`, and passes that prefix with the node logging and
+parameter interfaces to `filters::FilterChain<T>::configure()`. Chain plugins
+must be exported for the exact `filters::FilterBase<T>` base class string named
+by `TraitsT::dataType()`.
