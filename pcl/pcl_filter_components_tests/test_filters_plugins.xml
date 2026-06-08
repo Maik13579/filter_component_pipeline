@@ -1,0 +1,20 @@
+<class_libraries>
+  <library path="pcl_filter_components_tests_filters">
+    <class
+      name="pcl_filter_components_tests/IntensityOffsetXYZI"
+      type="pcl_filter_components_tests::IntensityOffsetXYZIFilter"
+      base_class_type="filters::FilterBase&lt;pcl::PointCloud&lt;pcl::PointXYZI&gt;&gt;">
+      <description>
+        Test filter that adds a configurable offset to XYZI point intensities.
+      </description>
+    </class>
+    <class
+      name="pcl_filter_components_tests/FrameIdSuffixXYZI"
+      type="pcl_filter_components_tests::FrameIdSuffixXYZIFilter"
+      base_class_type="filters::FilterBase&lt;pcl::PointCloud&lt;pcl::PointXYZI&gt;&gt;">
+      <description>
+        Test filter that appends a configurable suffix to the cloud frame id.
+      </description>
+    </class>
+  </library>
+</class_libraries>

@@ -57,12 +57,12 @@ PACKAGE_FILTERS = {
 }
 
 FILTER_CHAIN_COMPONENTS = {
-    "RosFilterChainXYZ": ("PointXYZ", "cloud"),
-    "RosFilterChainXYZI": ("PointXYZI", "cloud"),
-    "RosFilterChainXYZRGB": ("PointXYZRGB", "cloud"),
-    "RosFilterChainXYZRGBA": ("PointXYZRGBA", "cloud"),
-    "RosFilterChainPointNormal": ("PointNormal", "cloud"),
-    "RosFilterChainPointIndices": ("PointIndices", "indices"),
+    "RosFilterChainXYZ": ("PointXYZ", "cloud", "pcl::PointCloud<pcl::PointXYZ>"),
+    "RosFilterChainXYZI": ("PointXYZI", "cloud", "pcl::PointCloud<pcl::PointXYZI>"),
+    "RosFilterChainXYZRGB": ("PointXYZRGB", "cloud", "pcl::PointCloud<pcl::PointXYZRGB>"),
+    "RosFilterChainXYZRGBA": ("PointXYZRGBA", "cloud", "pcl::PointCloud<pcl::PointXYZRGBA>"),
+    "RosFilterChainPointNormal": ("PointNormal", "cloud", "pcl::PointCloud<pcl::Normal>"),
+    "RosFilterChainPointIndices": ("PointIndices", "indices", "pcl::PointIndices"),
 }
 
 
@@ -87,6 +87,9 @@ def test_discovery_reads_filter_and_type_adapter_exports() -> None:
 
     voxel = filters[("pcl_filter_components_xyzi", "VoxelGridXYZI")]
     assert voxel.component_class == "pcl_filter_components_xyzi::VoxelGridXYZIComponent"
+    assert voxel.kind == "filter"
+    assert voxel.chain_data_type == ""
+    assert voxel.chain_param_prefix == "filters"
 
     types = {(item.package, item.point_type): item for item in discovery.types}
     assert types[("pcl_filter_components_xyzi", "PointXYZI")].message_type == "sensor_msgs/msg/PointCloud2"
@@ -155,17 +158,20 @@ def test_components_register_in_rclcpp_components_index() -> None:
         assert f"pcl_filter_components_xyzi::{filter_name}XYZIComponent" in registered
 
 
-def test_filter_chain_components_are_discoverable() -> None:
+def test_filter_chain_components_are_discoverable_with_metadata() -> None:
     discovery = discover_filters()
     filters = {(item.package, item.filter): item for item in discovery.filters}
 
-    for filter_name, (point_type, port) in FILTER_CHAIN_COMPONENTS.items():
+    for filter_name, (point_type, port, chain_data_type) in FILTER_CHAIN_COMPONENTS.items():
         item = filters[("pcl_filter_components_filter_chain", filter_name)]
         assert item.component_class == f"pcl_filter_components_filter_chain::{filter_name}Component"
         assert item.input_type == point_type
         assert item.output_type == point_type
         assert item.input_ports == f"{port}:{point_type}"
         assert item.output_ports == f"{port}:{point_type}"
+        assert item.kind == "filter_chain"
+        assert item.chain_data_type == chain_data_type
+        assert item.chain_param_prefix == "filters"
 
 
 def test_filter_chain_components_register_in_rclcpp_components_index() -> None:
@@ -182,6 +188,20 @@ def test_filter_chain_components_register_in_rclcpp_components_index() -> None:
 
     for filter_name in FILTER_CHAIN_COMPONENTS:
         assert f"pcl_filter_components_filter_chain::{filter_name}Component" in registered
+
+
+def test_pcl_test_filter_chain_plugins_are_discoverable() -> None:
+    discovery = discover_filters()
+    plugins = {item.name: item for item in discovery.filter_plugins}
+
+    for plugin_name in (
+        "pcl_filter_components_tests/FrameIdSuffixXYZI",
+        "pcl_filter_components_tests/IntensityOffsetXYZI",
+    ):
+        assert plugins[plugin_name].package == "pcl_filter_components_tests"
+        assert plugins[plugin_name].base_class_type == (
+            "filters::FilterBase<pcl::PointCloud<pcl::PointXYZI>>"
+        )
 
 
 def test_factory_installs_example_pipeline() -> None:

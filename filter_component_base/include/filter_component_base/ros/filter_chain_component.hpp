@@ -37,18 +37,19 @@ public:
   {
     declareParameterIfNotDeclared(
       *this,
-      "filter_chain.param_prefix",
-      TraitsT::defaultParamPrefix(),
-      makeParameterDescriptor("Parameter prefix passed to filters::FilterChain."));
+      "in_place",
+      false,
+      makeParameterDescriptor(
+        "Process the filter chain in-place and publish the input message pointer."));
   }
 
 protected:
   void configure() override
   {
-    const auto param_prefix = getParameter<std::string>(*this, "filter_chain.param_prefix");
+    in_place_ = getParameter<bool>(*this, "in_place");
     filter_chain_ = std::make_unique<filters::FilterChain<MessageT>>(TraitsT::dataType());
     if (!filter_chain_->configure(
-        param_prefix,
+        "filters",
         get_node_logging_interface(),
         get_node_parameters_interface()))
     {
@@ -72,6 +73,18 @@ protected:
       return;
     }
 
+    if (in_place_) {
+      if (!filter_chain_ || !filter_chain_->update(*input, *input)) {
+        RCLCPP_WARN(
+          get_logger(),
+          "filters::FilterChain in-place update failed for data type '%s'; dropping message",
+          TraitsT::dataType());
+        return;
+      }
+      publish<AdapterT>(TraitsT::outputPort(), std::move(input));
+      return;
+    }
+
     auto output = std::make_unique<MessageT>();
     if (!filter_chain_ || !filter_chain_->update(*input, *output)) {
       RCLCPP_WARN(
@@ -85,6 +98,7 @@ protected:
 
 private:
   std::unique_ptr<filters::FilterChain<MessageT>> filter_chain_;
+  bool in_place_{false};
 };
 
 }  // namespace filter_component_base::ros

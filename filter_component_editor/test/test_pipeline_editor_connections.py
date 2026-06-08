@@ -64,6 +64,7 @@ def install_qt_stubs() -> None:
 def install_editor_dependency_stubs() -> None:
     filter_discovery = types.ModuleType("filter_component_editor.filter_discovery")
     filter_discovery.FilterExport = object
+    filter_discovery.FilterPluginExport = object
     filter_discovery.discover_filters = lambda: None
     parameter_discovery = types.ModuleType("filter_component_editor.parameter_discovery")
     parameter_discovery.ComponentParameterDiscovery = object
@@ -107,6 +108,44 @@ def editor_for(graph: Graph) -> PipelineEditor:
     return editor
 
 
+def chain_editor_for(graph: Graph) -> PipelineEditor:
+    editor = editor_for(graph)
+    editor.discovery = types.SimpleNamespace(
+        filters=[
+            types.SimpleNamespace(
+                package="pcl_filter_components_filter_chain",
+                filter="RosFilterChainXYZI",
+                component_class="pcl_filter_components_filter_chain::RosFilterChainXYZIComponent",
+                kind="filter_chain",
+                chain_data_type="pcl::PointCloud<pcl::PointXYZI>",
+                chain_param_prefix="filters",
+            ),
+        ],
+        filter_plugins=[
+            types.SimpleNamespace(
+                name="pcl_filters/VoxelGridXYZI",
+                type="pcl_filters::VoxelGridXYZI",
+                base_class_type="filters::FilterBase<pcl::PointCloud<pcl::PointXYZI>>",
+                description="",
+            ),
+            types.SimpleNamespace(
+                name="pcl_filters/MultiChannelXYZI",
+                type="pcl_filters::MultiChannelXYZI",
+                base_class_type="filters::MultiChannelFilterBase<pcl::PointCloud<pcl::PointXYZI>>",
+                description="",
+            ),
+            types.SimpleNamespace(
+                name="pcl_filters/VoxelGridXYZ",
+                type="pcl_filters::VoxelGridXYZ",
+                base_class_type="filters::FilterBase<pcl::PointCloud<pcl::PointXYZ>>",
+                description="",
+            ),
+        ],
+    )
+    editor.parameter_defaults_by_component = {}
+    return editor
+
+
 class FakeNodeItem:
     def __init__(self, node: Node) -> None:
         self.node = node
@@ -137,6 +176,20 @@ def filter_node(
         output_type=output_type,
         input_ports=input_ports,
         output_ports=output_ports,
+    )
+
+
+def chain_node(parameters: dict[str, object] | None = None) -> Node:
+    return Node(
+        id="chain",
+        name="chain",
+        type="filter",
+        package="pcl_filter_components_filter_chain",
+        filter="RosFilterChainXYZI",
+        component_class="pcl_filter_components_filter_chain::RosFilterChainXYZIComponent",
+        input_type="PointXYZI",
+        output_type="PointXYZI",
+        parameters=parameters or {},
     )
 
 
@@ -279,3 +332,127 @@ def test_collapsed_topic_publisher_stays_while_other_subscribers_remain() -> Non
     editor._remove_orphan_collapsed_topic_publishers({"/between"})
 
     assert editor.graph.edges == [publisher, remaining_subscriber]
+
+
+def test_filter_chain_metadata_detects_chain_nodes() -> None:
+    node = chain_node()
+    editor = chain_editor_for(Graph(nodes=[node]))
+
+    assert editor._is_filter_chain(node) is True
+    assert editor._chain_param_prefix(node) == "filters"
+    assert editor._chain_data_type(node) == "pcl::PointCloud<pcl::PointXYZI>"
+    assert editor._is_filter_chain(filter_node("voxel")) is False
+
+
+def test_compatible_chain_plugins_match_exact_filter_base_type() -> None:
+    node = chain_node()
+    editor = chain_editor_for(Graph(nodes=[node]))
+
+    plugins = editor._compatible_chain_plugins(node)
+
+    assert [plugin.name for plugin in plugins] == ["pcl_filters/VoxelGridXYZI"]
+
+
+def test_chain_parameter_rewrite_compacts_indices_and_removes_stale_entries() -> None:
+    node = chain_node(
+        {
+            "filters.filter1.name": "old",
+            "filters.filter1.type": "old_pkg/Old",
+            "filters.filter1.params.keep": 1,
+            "filters.filter3.name": "stale",
+            "filters.filter3.type": "old_pkg/Stale",
+            "filter.leaf_size": 0.1,
+        }
+    )
+    editor = chain_editor_for(Graph(nodes=[node]))
+
+    editor._rewrite_chain_parameters(
+        node,
+        [
+            {
+                "name": "second",
+                "type": "pkg/Second",
+                "params": {"threshold": 2},
+            },
+            {
+                "name": "first",
+                "type": "pkg/First",
+                "params": {"enabled": True},
+            },
+        ],
+    )
+
+    assert node.parameters == {
+        "filter.leaf_size": 0.1,
+        "filters.filter1.name": "second",
+        "filters.filter1.type": "pkg/Second",
+        "filters.filter1.params.threshold": 2,
+        "filters.filter2.name": "first",
+        "filters.filter2.type": "pkg/First",
+        "filters.filter2.params.enabled": True,
+    }
+
+
+def test_chain_entries_round_trip_plugin_params() -> None:
+    node = chain_node(
+        {
+            "filters.filter2.name": "second",
+            "filters.filter2.type": "pkg/Second",
+            "filters.filter2.params.threshold": 2,
+            "filters.filter1.name": "first",
+            "filters.filter1.type": "pkg/First",
+            "filters.filter1.params.enabled": True,
+        }
+    )
+    editor = chain_editor_for(Graph(nodes=[node]))
+
+    assert editor._chain_entries(node) == [
+        {"name": "first", "type": "pkg/First", "params": {"enabled": True}},
+        {"name": "second", "type": "pkg/Second", "params": {"threshold": 2}},
+    ]
+
+
+def test_filter_chain_sanitize_preserves_dynamic_plugin_parameters() -> None:
+    node = chain_node(
+        {
+            "filters.filter1.name": "first",
+            "filters.filter1.type": "pkg/First",
+            "filters.filter1.params.threshold": 2,
+            "in_place": True,
+            "filter_component_only": "drop",
+        }
+    )
+    editor = chain_editor_for(Graph(nodes=[node]))
+    editor.parameter_defaults_by_component = {
+        "pcl_filter_components_filter_chain::RosFilterChainXYZIComponent": {"in_place": False}
+    }
+
+    editor._sanitize_filter_parameters(node)
+
+    assert node.parameters == {
+        "filters.filter1.name": "first",
+        "filters.filter1.type": "pkg/First",
+        "filters.filter1.params.threshold": 2,
+        "in_place": True,
+    }
+
+
+def test_filter_chain_live_spec_reloads_on_parameter_change() -> None:
+    node = chain_node(
+        {
+            "filters.filter1.name": "first",
+            "filters.filter1.type": "pkg/First",
+            "in_place": True,
+        }
+    )
+    editor = chain_editor_for(Graph(nodes=[node]))
+    editor.parameter_defaults_by_component = {
+        "pcl_filter_components_filter_chain::RosFilterChainXYZIComponent": {"in_place": False}
+    }
+
+    specs = editor._live_component_specs()
+
+    assert specs["chain"]["reload_on_parameter_change"] is True
+    assert specs["chain"]["parameters"]["filters.filter1.name"] == "first"
+    assert specs["chain"]["parameters"]["filters.filter1.type"] == "pkg/First"
+    assert specs["chain"]["parameters"]["in_place"] is True

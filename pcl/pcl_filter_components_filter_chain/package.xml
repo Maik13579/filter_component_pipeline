@@ -24,36 +24,54 @@
     <build_type>ament_cmake</build_type>
     <filter_component
       filter="RosFilterChainXYZ"
+      kind="filter_chain"
+      chain_data_type="pcl::PointCloud&lt;pcl::PointXYZ&gt;"
+      chain_param_prefix="filters"
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
       output="PointXYZ"
       output_ports="cloud:PointXYZ"/>
     <filter_component
       filter="RosFilterChainXYZI"
+      kind="filter_chain"
+      chain_data_type="pcl::PointCloud&lt;pcl::PointXYZI&gt;"
+      chain_param_prefix="filters"
       input="PointXYZI"
       input_ports="cloud:PointXYZI"
       output="PointXYZI"
       output_ports="cloud:PointXYZI"/>
     <filter_component
       filter="RosFilterChainXYZRGB"
+      kind="filter_chain"
+      chain_data_type="pcl::PointCloud&lt;pcl::PointXYZRGB&gt;"
+      chain_param_prefix="filters"
       input="PointXYZRGB"
       input_ports="cloud:PointXYZRGB"
       output="PointXYZRGB"
       output_ports="cloud:PointXYZRGB"/>
     <filter_component
       filter="RosFilterChainXYZRGBA"
+      kind="filter_chain"
+      chain_data_type="pcl::PointCloud&lt;pcl::PointXYZRGBA&gt;"
+      chain_param_prefix="filters"
       input="PointXYZRGBA"
       input_ports="cloud:PointXYZRGBA"
       output="PointXYZRGBA"
       output_ports="cloud:PointXYZRGBA"/>
     <filter_component
       filter="RosFilterChainPointNormal"
+      kind="filter_chain"
+      chain_data_type="pcl::PointCloud&lt;pcl::Normal&gt;"
+      chain_param_prefix="filters"
       input="PointNormal"
       input_ports="cloud:PointNormal"
       output="PointNormal"
       output_ports="cloud:PointNormal"/>
     <filter_component
       filter="RosFilterChainPointIndices"
+      kind="filter_chain"
+      chain_data_type="pcl::PointIndices"
+      chain_param_prefix="filters"
       input="PointIndices"
       input_ports="indices:PointIndices"
       output="PointIndices"

@@ -20,15 +20,14 @@ input_ports: cloud:PointXYZI
 output_ports: cloud:PointXYZI
 ```
 
-Chain parameters default to the `filter_chain` prefix:
+Chain parameters use the fixed `filters` prefix:
 
 ```yaml
-filter_chain:
-  param_prefix: filter_chain
+filters:
   filter1:
     name: first_filter
     type: package/FilterPlugin
-    params: filter_chain.filter1.params
+    params: filters.filter1.params
 ```
 
 Filter-specific parameters are read under the prefix named by `filterN.params`. Only plugins exported for the exact `filters::FilterBase<T>` base class type can be loaded.

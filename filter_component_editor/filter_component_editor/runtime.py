@@ -170,6 +170,9 @@ class LivePipelineRuntime:
             elif self._topic_parameters_changed(self.loaded[node_id].parameters, spec["parameters"]):
                 self.unload(node_id)
                 self.load(node_id, spec, configure=configure)
+            elif spec.get("reload_on_parameter_change") and loaded.parameters != spec["parameters"]:
+                self.unload(node_id)
+                self.load(node_id, spec, configure=configure)
             elif configure:
                 self.reconfigure(node_id, spec["parameters"])
             else:

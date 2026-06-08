@@ -141,12 +141,15 @@ struct MyChainTraits
   static const char * dataType() {return "pcl::PointCloud<pcl::PointXYZ>";}
   static const char * inputPort() {return "cloud";}
   static const char * outputPort() {return "cloud";}
-  static const char * defaultParamPrefix() {return "filter_chain";}
 };
 ```
 
-The component declares `filter_chain.param_prefix`, defaulting to
-`TraitsT::defaultParamPrefix()`, and passes that prefix with the node logging and
-parameter interfaces to `filters::FilterChain<T>::configure()`. Chain plugins
-must be exported for the exact `filters::FilterBase<T>` base class string named
-by `TraitsT::dataType()`.
+The component passes the fixed `filters` parameter prefix with the node logging
+and parameter interfaces to `filters::FilterChain<T>::configure()`. Chain
+plugins must be exported for the exact `filters::FilterBase<T>` base class
+string named by `TraitsT::dataType()`.
+
+Set the component parameter `in_place` to `true` to call the chain with the
+input object as both input and output, then publish the original input message
+pointer. This only works correctly when every filter in the chain supports
+in-place processing with aliased input and output references.

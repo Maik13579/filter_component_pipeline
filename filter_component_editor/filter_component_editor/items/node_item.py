@@ -41,7 +41,7 @@ class NodeItem(QGraphicsRectItem):
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
         self.border_color = self.editor.theme_color("mid")
         self.connection_highlight = ""
-        self.setBrush(self.editor.node_fill(node.type))
+        self.setBrush(self.editor.node_fill(node.type, node))
         self.setPen(QPen(self.border_color, 1.5))
         if node.type == "topic":
             title = QGraphicsSimpleTextItem(title_text, self)
@@ -88,10 +88,10 @@ class NodeItem(QGraphicsRectItem):
             self.setBrush(fill)
         elif self.isSelected():
             self.setPen(QPen(self.editor.accent_color("selected"), 3.0))
-            self.setBrush(self.editor.selected_node_fill(self.node.type))
+            self.setBrush(self.editor.selected_node_fill(self.node.type, self.node))
         else:
             self.setPen(QPen(self.border_color, 1.5))
-            self.setBrush(self.editor.node_fill(self.node.type))
+            self.setBrush(self.editor.node_fill(self.node.type, self.node))
         if self.node.type == "topic":
             painter.setRenderHint(QPainter.Antialiasing)
             painter.setPen(self.pen())
@@ -118,7 +118,7 @@ class NodeItem(QGraphicsRectItem):
         self.update()
 
     def _connection_highlight_style(self) -> tuple[QColor, float, QColor]:
-        fill = self.editor.node_fill(self.node.type)
+        fill = self.editor.node_fill(self.node.type, self.node)
         if self.connection_highlight == "compatible":
             return QColor("#2e7d32"), 3.0, fill
         if self.connection_highlight == "ros_message_compatible":
