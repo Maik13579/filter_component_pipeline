@@ -1721,9 +1721,7 @@ class PipelineEditor(Plugin):
         remove_button = QPushButton("Remove", dialog)
         up_button = QPushButton("Move Up", dialog)
         down_button = QPushButton("Move Down", dialog)
-        expand_button = QPushButton("Expand", dialog)
-        collapse_button = QPushButton("Collapse", dialog)
-        for button in (add_button, remove_button, up_button, down_button, expand_button, collapse_button):
+        for button in (add_button, remove_button, up_button, down_button):
             controls.addWidget(button)
         layout.addLayout(controls)
         in_place = QCheckBox("In-place", dialog)
@@ -1735,96 +1733,99 @@ class PipelineEditor(Plugin):
 
         entries = self._chain_entries(node)
         selected_index = {"value": 0}
-        row_widgets: list[dict[str, object]] = []
         plugins = self._compatible_chain_plugins(node)
+        chain_list = QListWidget(dialog)
+        layout.addWidget(chain_list, 1)
+        details = QFrame(dialog)
+        details.setFrameShape(QFrame.StyledPanel)
+        details_form = QFormLayout(details)
+        layout.addWidget(details)
+        detail_widgets: dict[str, object] = {}
 
-        rows = QWidget(page)
-        rows_layout = QVBoxLayout(rows)
-        layout.addWidget(rows)
-        layout.addStretch(1)
+        def list_label(index: int, entry: dict[str, object]) -> str:
+            name = str(entry.get("name", "")).strip() or "(unnamed)"
+            plugin_type = str(entry.get("type", "")).strip() or "(no plugin)"
+            return f"filter{index + 1}: {name}\n{plugin_type}"
 
-        def rebuild() -> None:
-            while rows_layout.count():
-                item = rows_layout.takeAt(0)
+        def clear_details() -> None:
+            while details_form.count():
+                item = details_form.takeAt(0)
                 widget = item.widget()
                 if widget is not None:
                     widget.deleteLater()
-            row_widgets.clear()
-            if not entries:
-                rows_layout.addWidget(QLabel("No filters in chain.", dialog))
-                return
-            selected_index["value"] = max(0, min(selected_index["value"], len(entries) - 1))
-            for index, entry in enumerate(entries):
-                frame = QFrame(dialog)
-                frame.setFrameShape(QFrame.StyledPanel)
-                frame_layout = QVBoxLayout(frame)
-                header = QHBoxLayout()
-                selected = QCheckBox(dialog)
-                selected.setChecked(index == selected_index["value"])
-                selected.toggled.connect(lambda checked, row=index: selected_index.update({"value": row}) if checked else None)
-                header.addWidget(selected)
-                header.addWidget(QLabel(f"filter{index + 1}", dialog))
-                name_edit = QLineEdit(str(entry.get("name", "")), dialog)
-                header.addWidget(name_edit)
-                type_combo = QComboBox(dialog)
-                type_values = [plugin.name for plugin in plugins]
-                current_type = str(entry.get("type", ""))
-                if current_type and current_type not in type_values:
-                    type_values.insert(0, current_type)
-                type_combo.addItems(type_values)
-                type_combo.setEditable(True)
-                type_combo.setCurrentText(current_type)
-                header.addWidget(type_combo)
-                expanded = QCheckBox("Expanded", dialog)
-                expanded.setChecked(True)
-                header.addWidget(expanded)
-                frame_layout.addLayout(header)
+            detail_widgets.clear()
 
-                params_widget = QWidget(frame)
-                params_form = QFormLayout(params_widget)
-                param_widgets: dict[str, QLineEdit | QCheckBox] = {}
-                params = entry.get("params", {})
-                if isinstance(params, dict) and params:
-                    for param_name, value in sorted(params.items()):
-                        widget = self._parameter_editor_widget(dialog, value)
-                        param_widgets[param_name] = widget
-                        params_form.addRow(param_name, widget)
-                else:
-                    params_form.addRow(QLabel("No discovered parameters.", dialog))
-                expanded.toggled.connect(params_widget.setVisible)
-                params_widget.setVisible(expanded.isChecked())
-                frame_layout.addWidget(params_widget)
-                rows_layout.addWidget(frame)
-                row_widgets.append({
-                    "name": name_edit,
-                    "type": type_combo,
-                    "params": param_widgets,
-                })
+        def store_detail() -> None:
+            if not detail_widgets or not entries:
+                return
+            index = selected_index["value"]
+            if index < 0 or index >= len(entries):
+                return
+            name_widget = detail_widgets.get("name")
+            param_widgets = detail_widgets.get("params", {})
+            params: dict[str, object] = {}
+            old_params = entries[index].get("params", {})
+            if not isinstance(old_params, dict):
+                old_params = {}
+            if isinstance(param_widgets, dict):
+                for param_name, widget in param_widgets.items():
+                    params[param_name] = self._parameter_widget_value(
+                        param_name,
+                        widget,
+                        old_params.get(param_name, ""),
+                    )
+            entries[index] = {
+                "name": name_widget.text().strip() if isinstance(name_widget, QLineEdit) else "",
+                "type": str(entries[index].get("type", "")).strip(),
+                "params": params,
+            }
+
+        def rebuild_list() -> None:
+            chain_list.clear()
+            for index, entry in enumerate(entries):
+                chain_list.addItem(list_label(index, entry))
+            if entries:
+                selected_index["value"] = max(0, min(selected_index["value"], len(entries) - 1))
+                chain_list.setCurrentRow(selected_index["value"])
+
+        def render_detail() -> None:
+            clear_details()
+            if not entries:
+                details_form.addRow(QLabel("No filters in chain.", dialog))
+                return
+            index = max(0, min(selected_index["value"], len(entries) - 1))
+            selected_index["value"] = index
+            entry = entries[index]
+            details_form.addRow("Index", self._readonly_field(f"filter{index + 1}"))
+            name_edit = QLineEdit(str(entry.get("name", "")), dialog)
+            name_edit.textEdited.connect(lambda _text: chain_list.currentItem().setText(list_label(index, {
+                "name": name_edit.text(),
+                "type": entry.get("type", ""),
+            })) if chain_list.currentItem() is not None else None)
+            details_form.addRow("Name", name_edit)
+            details_form.addRow("Plugin", self._readonly_field(str(entry.get("type", ""))))
+            param_widgets: dict[str, QLineEdit | QCheckBox] = {}
+            params = entry.get("params", {})
+            if isinstance(params, dict) and params:
+                for param_name, value in sorted(params.items()):
+                    widget = self._parameter_editor_widget(dialog, value)
+                    param_widgets[param_name] = widget
+                    details_form.addRow(param_name, widget)
+            else:
+                details_form.addRow(QLabel("No discovered parameters.", dialog))
+            detail_widgets["name"] = name_edit
+            detail_widgets["params"] = param_widgets
+
+        def selection_changed() -> None:
+            store_detail()
+            row = chain_list.currentRow()
+            if row >= 0:
+                selected_index["value"] = row
+            render_detail()
 
         def collect() -> dict[str, object]:
-            updated_entries: list[dict[str, object]] = []
-            for entry, widgets in zip(entries, row_widgets, strict=False):
-                name_widget = widgets["name"]
-                type_widget = widgets["type"]
-                param_widgets = widgets["params"]
-                params: dict[str, object] = {}
-                if isinstance(param_widgets, dict):
-                    old_params = entry.get("params", {})
-                    if not isinstance(old_params, dict):
-                        old_params = {}
-                    for param_name, widget in param_widgets.items():
-                        params[param_name] = self._parameter_widget_value(
-                            param_name,
-                            widget,
-                            old_params.get(param_name, ""),
-                        )
-                updated_entries.append({
-                    "name": name_widget.text().strip() if isinstance(name_widget, QLineEdit) else "",
-                    "type": type_widget.currentText().strip() if isinstance(type_widget, QComboBox) else "",
-                    "params": params,
-                })
-            entries[:] = updated_entries
-            self._rewrite_chain_parameters(node, updated_entries)
+            store_detail()
+            self._rewrite_chain_parameters(node, entries)
             node.parameters["in_place"] = in_place.isChecked()
             return dict(node.parameters)
 
@@ -1837,15 +1838,18 @@ class PipelineEditor(Plugin):
             except Exception as error:
                 QMessageBox.critical(self.widget, "Parameter Discovery Failed", str(error))
             entries[:] = self._chain_entries(node)
-            rebuild()
+            rebuild_list()
+            render_detail()
 
         def add_filter() -> None:
             if not plugins:
                 QMessageBox.warning(self.widget, "No Plugins", "No compatible filters plugins were discovered.")
                 return
+            plugin = self._choose_chain_plugin(plugins)
+            if plugin is None:
+                return
             current = collect()
             node.parameters = current
-            plugin = plugins[0]
             entries.append({"name": plugin.name.rsplit("/", 1)[-1], "type": plugin.name, "params": {}})
             selected_index["value"] = len(entries) - 1
             apply_chain_change(entries)
@@ -1871,17 +1875,62 @@ class PipelineEditor(Plugin):
         remove_button.clicked.connect(remove_filter)
         up_button.clicked.connect(lambda: move_filter(-1))
         down_button.clicked.connect(lambda: move_filter(1))
-        expand_button.clicked.connect(lambda: [widget.setVisible(True) for widget in rows.findChildren(QWidget)])
-        collapse_button.clicked.connect(lambda: [
-            child.setChecked(False)
-            for child in rows.findChildren(QCheckBox)
-            if child.text() == "Expanded"
-        ])
+        chain_list.itemSelectionChanged.connect(selection_changed)
 
-        rebuild()
+        rebuild_list()
+        render_detail()
         scroll.setWidget(page)
         tabs.addTab(scroll, "Chain")
         return collect
+
+    def _choose_chain_plugin(self, plugins: list[FilterPluginExport]) -> FilterPluginExport | None:
+        dialog = QDialog(self.widget)
+        dialog.setWindowTitle("Add Chain Filter")
+        layout = QVBoxLayout(dialog)
+        search = QLineEdit(dialog)
+        search.setPlaceholderText("Search plugins")
+        layout.addWidget(search)
+        plugin_list = QListWidget(dialog)
+        layout.addWidget(plugin_list, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
+        layout.addWidget(buttons)
+
+        visible_plugins: list[FilterPluginExport] = []
+
+        def label_for(plugin: FilterPluginExport) -> str:
+            if plugin.description:
+                return f"{plugin.name}\n{plugin.description}"
+            return plugin.name
+
+        def refresh() -> None:
+            query = search.text().strip().lower()
+            visible_plugins[:] = [
+                plugin
+                for plugin in plugins
+                if not query
+                or query in plugin.name.lower()
+                or query in plugin.type.lower()
+                or query in plugin.description.lower()
+                or query in plugin.package.lower()
+            ]
+            plugin_list.clear()
+            for plugin in visible_plugins:
+                plugin_list.addItem(label_for(plugin))
+            if visible_plugins:
+                plugin_list.setCurrentRow(0)
+
+        search.textChanged.connect(refresh)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        plugin_list.itemDoubleClicked.connect(lambda _item: dialog.accept())
+        refresh()
+        self._set_dialog_default_size(dialog, width=760, height=460)
+        if dialog.exec_() != QDialog.Accepted:
+            return None
+        row = plugin_list.currentRow()
+        if row < 0 or row >= len(visible_plugins):
+            return None
+        return visible_plugins[row]
 
     def _ensure_filter_port_configs(self, node: Node) -> None:
         for port, config in self._default_port_configs(node.input_ports or node.input_type, False).items():
