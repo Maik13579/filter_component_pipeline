@@ -98,8 +98,10 @@ void expectCommonParameterMetadata(const NodeT & node)
   EXPECT_EQ(node.get_parameter("outputs.orig_cloud.topic").as_string(), "~/_output/orig_cloud");
   EXPECT_FALSE(node.has_parameter("filter.output_indices"));
   EXPECT_FALSE(node.has_parameter("queue_size"));
+  EXPECT_FALSE(node.has_parameter("sync.mode"));
   EXPECT_FALSE(node.has_parameter("sync.policy"));
   EXPECT_FALSE(node.has_parameter("sync.queue_size"));
+  EXPECT_FALSE(node.has_parameter("sync.max_interval"));
   EXPECT_FALSE(node.has_parameter("sync.slop"));
 }
 
@@ -238,9 +240,9 @@ TEST(ParameterDescriptors, PointCloudMergerXYZIParametersExposeEditorMetadata)
       "outputs.orig_input_2.qos.history",
       "outputs.orig_input_2.qos.depth",
       "outputs.orig_input_2.qos.durability",
-      "sync.policy",
+      "sync.mode",
       "sync.queue_size",
-      "sync.slop",
+      "sync.max_interval",
     });
   expectIntegerRange(*node, "inputs.input_1.qos.depth");
   expectIntegerRange(*node, "inputs.input_2.qos.depth");
@@ -248,7 +250,7 @@ TEST(ParameterDescriptors, PointCloudMergerXYZIParametersExposeEditorMetadata)
   expectIntegerRange(*node, "outputs.orig_input_1.qos.depth");
   expectIntegerRange(*node, "outputs.orig_input_2.qos.depth");
   expectIntegerRange(*node, "sync.queue_size");
-  expectFloatingPointRange(*node, "sync.slop");
+  expectFloatingPointRange(*node, "sync.max_interval");
 
   EXPECT_EQ(node->get_parameter("inputs.input_1.topic").as_string(), "~/_input/input_1");
   EXPECT_EQ(node->get_parameter("inputs.input_2.topic").as_string(), "~/_input/input_2");
@@ -260,9 +262,10 @@ TEST(ParameterDescriptors, PointCloudMergerXYZIParametersExposeEditorMetadata)
   EXPECT_EQ(node->get_parameter("outputs.cloud.qos.durability").as_string(), "volatile");
   EXPECT_FALSE(node->has_parameter("queue_size"));
   EXPECT_FALSE(node->has_parameter("filter.output_indices"));
-  EXPECT_EQ(node->get_parameter("sync.policy").as_string(), "ExactTime");
+  EXPECT_FALSE(node->has_parameter("sync.policy"));
+  EXPECT_EQ(node->get_parameter("sync.mode").as_string(), "receipt_time");
   EXPECT_EQ(node->get_parameter("sync.queue_size").as_int(), 10);
-  EXPECT_DOUBLE_EQ(node->get_parameter("sync.slop").as_double(), 0.05);
+  EXPECT_DOUBLE_EQ(node->get_parameter("sync.max_interval").as_double(), 0.05);
 
   node.reset();
   context->shutdown("test complete");

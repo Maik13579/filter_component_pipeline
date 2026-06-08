@@ -10,12 +10,19 @@ callback when a complete input set is available. Component authors then access
 the synchronized messages through typed port accessors rather than raw
 type-erased storage.
 
-The supported policies are `ExactTime` and `ApproximateTime`. The corresponding
-component parameters are:
+The default mode is `receipt_time`. Each subscription callback stamps the input
+with `node.get_clock()->now()`, so message headers are ignored. When `use_sim_time`
+is enabled, synchronization follows the node's ROS time source.
 
-- `sync.policy`: matching policy.
+Multi-input components support:
+
 - `sync.queue_size`: number of unmatched messages retained per input port.
-- `sync.slop`: timestamp tolerance for approximate matching.
+- `sync.max_interval`: maximum receipt-time span across a selected input set.
+- `sync.mode`: `receipt_time` or `latest`.
+
+`latest` mode skips bounded queue matching and fires whenever any input updates
+after every port has received at least one message. Accessors return the most
+recent data for each port.
 
 These settings are meaningful only for components with more than one input port,
 such as `PointCloudMerger`.

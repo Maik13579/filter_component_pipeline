@@ -210,6 +210,29 @@ std::string nodeTypeForEdge(const PipelineNode & node, bool outgoing, const std:
     outgoing);
 }
 
+void validateSyncConfig(const PipelineNode & node)
+{
+  for (const auto & [key, value] : node.sync) {
+    (void)value;
+    if (key == "policy") {
+      throw std::runtime_error(
+        "Filter node '" + node.id + "' uses removed sync.policy; use sync.mode instead");
+    }
+    if (key == "slop") {
+      throw std::runtime_error(
+        "Filter node '" + node.id + "' uses removed sync.slop; use sync.max_interval instead");
+    }
+    if (key != "mode" && key != "queue_size" && key != "max_interval") {
+      throw std::runtime_error("Unsupported sync option '" + key + "' on filter node '" + node.id + "'");
+    }
+  }
+  const auto mode = node.sync.find("mode");
+  if (mode != node.sync.end() && mode->second != "receipt_time" && mode->second != "latest") {
+    throw std::runtime_error(
+      "Unsupported sync.mode '" + mode->second + "' on filter node '" + node.id + "'");
+  }
+}
+
 }  // namespace
 
 std::string defaultComponentClass(const std::string & package_name, const std::string & filter)
@@ -316,6 +339,9 @@ void validatePipelineGraph(const PipelineGraph & graph)
     }
     if (node.type == "topic" && !topic_names.insert(node.topic).second) {
       throw std::runtime_error("Duplicate topic name '" + node.topic + "'");
+    }
+    if (node.type == "filter") {
+      validateSyncConfig(node);
     }
   }
 

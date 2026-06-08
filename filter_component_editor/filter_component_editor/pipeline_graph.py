@@ -119,6 +119,8 @@ class Graph:
                 raise ValueError(f"topic node {node.id} has no topic")
             if node.type == "topic" and not (node.input_type or node.output_type):
                 raise ValueError(f"topic node {node.id} has no type")
+            if node.type == "filter":
+                _validate_sync_config(node)
 
         for edge in self.edges:
             if edge.compatibility and edge.compatibility != "ros_message":
@@ -219,7 +221,7 @@ def graph_from_dict(data: dict[str, Any]) -> Graph:
         if node_type == "filter":
             parameters = dict(parameters)
             sync = dict(sync)
-            for key in ("policy", "queue_size", "slop"):
+            for key in ("policy", "queue_size", "slop", "max_interval"):
                 if key in parameters:
                     sync.setdefault(key, parameters.pop(key))
         graph.nodes.append(
@@ -332,3 +334,15 @@ def _canonical_filter_port(node: Node, port: str, outgoing: bool) -> str:
     if canonical == default_port and (not port or port in {"in", "out"}) and len(configs) == 1:
         return next(iter(configs))
     return canonical
+
+
+def _validate_sync_config(node: Node) -> None:
+    for key, value in node.sync.items():
+        if key == "policy":
+            raise ValueError(f"filter node {node.id} uses removed sync.policy; use sync.mode instead")
+        if key == "slop":
+            raise ValueError(f"filter node {node.id} uses removed sync.slop; use sync.max_interval instead")
+        if key not in {"mode", "queue_size", "max_interval"}:
+            raise ValueError(f"unsupported sync option {key} on filter node {node.id}")
+        if key == "mode" and value not in {"receipt_time", "latest"}:
+            raise ValueError(f"unsupported sync.mode {value} on filter node {node.id}")

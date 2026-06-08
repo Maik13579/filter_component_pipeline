@@ -105,20 +105,6 @@ struct TypeAdapter<TestUnheadered, std_msgs::msg::UInt64>
 
 }  // namespace rclcpp
 
-namespace filter_component_synchronizer
-{
-
-template <>
-struct InputStamp<rclcpp::adapt_type<TestUnheadered>::as<std_msgs::msg::UInt64>>
-{
-  static std::uint64_t stamp(const TestUnheadered & message)
-  {
-    return message.timestamp;
-  }
-};
-
-}  // namespace filter_component_synchronizer
-
 namespace
 {
 
@@ -163,24 +149,26 @@ protected:
 
   void publishStamp(
     rclcpp::Publisher<TestAdapter>::SharedPtr publisher,
-    uint64_t stamp)
+    uint64_t stamp,
+    std::chrono::milliseconds spin_duration = std::chrono::milliseconds{50})
   {
     auto message = std::make_unique<TestStamped>();
     message->header.stamp = stamp;
     message->value = stamp;
     publisher->publish(std::move(message));
-    spinFor(std::chrono::milliseconds{50});
+    spinFor(spin_duration);
   }
 
   void publishUnheaderedStamp(
     rclcpp::Publisher<UnheaderedAdapter>::SharedPtr publisher,
-    uint64_t stamp)
+    uint64_t stamp,
+    std::chrono::milliseconds spin_duration = std::chrono::milliseconds{50})
   {
     auto message = std::make_unique<TestUnheadered>();
     message->timestamp = stamp;
     message->value = stamp;
     publisher->publish(std::move(message));
-    spinFor(std::chrono::milliseconds{50});
+    spinFor(spin_duration);
   }
 
   std::shared_ptr<rclcpp::Context> context;
@@ -204,50 +192,52 @@ TEST_F(SynchronizerTest, OneInputPassThroughTriggers)
   EXPECT_EQ(input->header.stamp, 10U);
 }
 
-TEST_F(SynchronizerTest, TwoInputExactTimeRequiresCompleteSet)
+TEST_F(SynchronizerTest, TwoInputsMatchWhenReceiptSpanIsWithinMaxInterval)
 {
   size_t ready_count = 0U;
-  filter_component_synchronizer::FilterComponentSynchronizer sync{{}, [&ready_count]() {++ready_count;}};
+  auto options = filter_component_synchronizer::SynchronizerOptions{};
+  options.max_interval = 1.0;
+  filter_component_synchronizer::FilterComponentSynchronizer sync{options, [&ready_count]() {++ready_count;}};
   const auto qos = rclcpp::QoS{5};
   sync.addInput<rclcpp::Node, TestAdapter>(*node, "left", "left_in", qos);
   sync.addInput<rclcpp::Node, TestAdapter>(*node, "right", "right_in", qos);
   auto left = node->create_publisher<TestAdapter>("left_in", qos);
   auto right = node->create_publisher<TestAdapter>("right_in", qos);
 
-  publishStamp(left, 42U);
+  publishStamp(left, 100U);
   EXPECT_EQ(ready_count, 0U);
-  publishStamp(right, 42U);
+  publishStamp(right, 200U);
 
   EXPECT_EQ(ready_count, 1U);
-  EXPECT_EQ(sync.takeInput<TestAdapter>("left")->header.stamp, 42U);
-  EXPECT_EQ(sync.takeInput<TestAdapter>("right")->header.stamp, 42U);
+  EXPECT_EQ(sync.takeInput<TestAdapter>("left")->header.stamp, 100U);
+  EXPECT_EQ(sync.takeInput<TestAdapter>("right")->header.stamp, 200U);
 }
 
-TEST_F(SynchronizerTest, ApproximateTimeMatchesWithinSlop)
+TEST_F(SynchronizerTest, InputsDoNotMatchWhenReceiptSpanExceedsMaxInterval)
 {
   size_t ready_count = 0U;
   auto options = filter_component_synchronizer::SynchronizerOptions{};
-  options.policy = filter_component_synchronizer::SyncPolicy::ApproximateTime;
-  options.slop = 0.02;
+  options.max_interval = 0.001;
   filter_component_synchronizer::FilterComponentSynchronizer sync{options, [&ready_count]() {++ready_count;}};
   const auto qos = rclcpp::QoS{5};
-  sync.addInput<rclcpp::Node, TestAdapter>(*node, "left", "approx_left", qos);
-  sync.addInput<rclcpp::Node, TestAdapter>(*node, "right", "approx_right", qos);
-  auto left = node->create_publisher<TestAdapter>("approx_left", qos);
-  auto right = node->create_publisher<TestAdapter>("approx_right", qos);
+  sync.addInput<rclcpp::Node, TestAdapter>(*node, "left", "too_old_left", qos);
+  sync.addInput<rclcpp::Node, TestAdapter>(*node, "right", "too_old_right", qos);
+  auto left = node->create_publisher<TestAdapter>("too_old_left", qos);
+  auto right = node->create_publisher<TestAdapter>("too_old_right", qos);
 
-  publishStamp(left, 1000000U);
-  publishStamp(right, 1010000U);
+  publishStamp(left, 1U);
+  publishStamp(right, 2U);
 
-  EXPECT_EQ(ready_count, 1U);
-  EXPECT_EQ(sync.takeInput<TestAdapter>("left")->header.stamp, 1000000U);
-  EXPECT_EQ(sync.takeInput<TestAdapter>("right")->header.stamp, 1010000U);
+  EXPECT_EQ(ready_count, 0U);
+  EXPECT_EQ(sync.peekInput<TestAdapter>("left"), nullptr);
+  EXPECT_EQ(sync.peekInput<TestAdapter>("right"), nullptr);
 }
 
 TEST_F(SynchronizerTest, QueueOverflowDropsOldUnmatchedInputs)
 {
   size_t ready_count = 0U;
   auto options = filter_component_synchronizer::SynchronizerOptions{};
+  options.max_interval = 1.0;
   options.queue_size = 1U;
   filter_component_synchronizer::FilterComponentSynchronizer sync{options, [&ready_count]() {++ready_count;}};
   const auto qos = rclcpp::QoS{5};
@@ -258,13 +248,35 @@ TEST_F(SynchronizerTest, QueueOverflowDropsOldUnmatchedInputs)
 
   publishStamp(left, 1U);
   publishStamp(left, 2U);
-  publishStamp(right, 1U);
-  EXPECT_EQ(ready_count, 0U);
-  publishStamp(right, 2U);
+  publishStamp(right, 9U);
 
   EXPECT_EQ(ready_count, 1U);
   EXPECT_EQ(sync.takeInput<TestAdapter>("left")->header.stamp, 2U);
-  EXPECT_EQ(sync.takeInput<TestAdapter>("right")->header.stamp, 2U);
+  EXPECT_EQ(sync.takeInput<TestAdapter>("right")->header.stamp, 9U);
+}
+
+TEST_F(SynchronizerTest, StaleMessagesOlderThanMaxIntervalAreDropped)
+{
+  size_t ready_count = 0U;
+  auto options = filter_component_synchronizer::SynchronizerOptions{};
+  options.max_interval = 0.01;
+  filter_component_synchronizer::FilterComponentSynchronizer sync{options, [&ready_count]() {++ready_count;}};
+  const auto qos = rclcpp::QoS{5};
+  sync.addInput<rclcpp::Node, TestAdapter>(*node, "left", "stale_left", qos);
+  sync.addInput<rclcpp::Node, TestAdapter>(*node, "right", "stale_right", qos);
+  auto left = node->create_publisher<TestAdapter>("stale_left", qos);
+  auto right = node->create_publisher<TestAdapter>("stale_right", qos);
+
+  publishStamp(left, 1U);
+  publishStamp(right, 2U);
+  EXPECT_EQ(ready_count, 0U);
+
+  publishStamp(left, 3U, std::chrono::milliseconds{2});
+  publishStamp(right, 4U, std::chrono::milliseconds{2});
+
+  EXPECT_EQ(ready_count, 1U);
+  EXPECT_EQ(sync.takeInput<TestAdapter>("left")->header.stamp, 3U);
+  EXPECT_EQ(sync.takeInput<TestAdapter>("right")->header.stamp, 4U);
 }
 
 TEST_F(SynchronizerTest, TypedAccessorRejectsWrongAdapterType)
@@ -276,7 +288,7 @@ TEST_F(SynchronizerTest, TypedAccessorRejectsWrongAdapterType)
   EXPECT_THROW(sync.takeInput<OtherAdapter>("cloud"), std::invalid_argument);
 }
 
-TEST_F(SynchronizerTest, NonHeaderMessageUsesInputStampTrait)
+TEST_F(SynchronizerTest, HeaderlessAdaptedMessageDoesNotNeedInputStampTrait)
 {
   size_t ready_count = 0U;
   filter_component_synchronizer::FilterComponentSynchronizer sync{{}, [&ready_count]() {++ready_count;}};
@@ -290,6 +302,31 @@ TEST_F(SynchronizerTest, NonHeaderMessageUsesInputStampTrait)
   auto input = sync.takeInput<UnheaderedAdapter>("image");
   ASSERT_NE(input, nullptr);
   EXPECT_EQ(input->timestamp, 99U);
+}
+
+TEST_F(SynchronizerTest, LatestModeFiresWithMostRecentDataOnAnyInput)
+{
+  size_t ready_count = 0U;
+  auto options = filter_component_synchronizer::SynchronizerOptions{};
+  options.mode = filter_component_synchronizer::SyncMode::Latest;
+  filter_component_synchronizer::FilterComponentSynchronizer sync{options, [&ready_count]() {++ready_count;}};
+  const auto qos = rclcpp::QoS{5};
+  sync.addInput<rclcpp::Node, TestAdapter>(*node, "left", "latest_left", qos);
+  sync.addInput<rclcpp::Node, TestAdapter>(*node, "right", "latest_right", qos);
+  auto left = node->create_publisher<TestAdapter>("latest_left", qos);
+  auto right = node->create_publisher<TestAdapter>("latest_right", qos);
+
+  publishStamp(left, 1U);
+  EXPECT_EQ(ready_count, 0U);
+  publishStamp(right, 2U);
+  EXPECT_EQ(ready_count, 1U);
+  EXPECT_EQ(sync.takeInput<TestAdapter>("left")->header.stamp, 1U);
+  EXPECT_EQ(sync.takeInput<TestAdapter>("right")->header.stamp, 2U);
+
+  publishStamp(left, 3U);
+  EXPECT_EQ(ready_count, 2U);
+  EXPECT_EQ(sync.takeInput<TestAdapter>("left")->header.stamp, 3U);
+  EXPECT_EQ(sync.takeInput<TestAdapter>("right")->header.stamp, 2U);
 }
 
 }  // namespace

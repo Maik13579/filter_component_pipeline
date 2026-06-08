@@ -37,8 +37,9 @@ outputs.cloud.topic: /points/output
 ```
 
 The saved graph may also contain per-port QoS maps and a filter node `sync` map.
-The factory passes sync entries through as `sync.policy`, `sync.queue_size`, and
-`sync.slop` parameters for components that declare more than one input port.
+The factory passes sync entries through as `sync.mode`, `sync.queue_size`, and
+`sync.max_interval` parameters for components that declare more than one input
+port. Removed `sync.policy` graphs are rejected during validation.
 
 Legacy graph ports named `in` and `out` are normalized to the modern `cloud`
 port for filter components. Topic-node ports such as `in` and `out` remain graph

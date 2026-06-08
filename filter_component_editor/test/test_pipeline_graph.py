@@ -40,7 +40,7 @@ def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
                 parameters={"filter.leaf_size_x": 0.1},
                 inputs={"cloud": {"qos": {"reliability": "reliable", "history": "keep_last", "depth": 8}}},
                 outputs={"cloud": {"qos": {"durability": "transient_local"}}},
-                sync={"policy": "ExactTime"},
+                sync={"mode": "receipt_time", "max_interval": 0.1},
             ),
             Node(
                 id="/pcl_pipeline/voxel_to_output",
@@ -83,7 +83,8 @@ def test_graph_round_trip_preserves_editor_fields(tmp_path: Path) -> None:
     assert loaded.nodes[1].parameters["filter.leaf_size_x"] == 0.1
     assert loaded.nodes[1].inputs["cloud"]["qos"]["depth"] == 8
     assert loaded.nodes[1].outputs["cloud"]["qos"]["durability"] == "transient_local"
-    assert loaded.nodes[1].sync["policy"] == "ExactTime"
+    assert loaded.nodes[1].sync["mode"] == "receipt_time"
+    assert loaded.nodes[1].sync["max_interval"] == 0.1
     assert loaded.nodes[0].position == {"x": 10.0, "y": 20.0}
     assert loaded.editor == {"orientation": "top_down"}
     assert loaded.nodes[2].topic == "/pcl_pipeline/voxel_to_output"
@@ -231,7 +232,7 @@ def test_graph_save_canonicalizes_same_named_filter_ports(tmp_path: Path) -> Non
     assert loaded.edges[1].source.direction == "output"
 
 
-def test_graph_load_migrates_legacy_sync_parameters() -> None:
+def test_graph_load_preserves_sync_parameters() -> None:
     loaded = graph_from_dict(
         {
             "version": 2,
@@ -246,15 +247,36 @@ def test_graph_load_migrates_legacy_sync_parameters() -> None:
                     "parameters": {
                         "queue_size": 5,
                     },
-                    "sync": {"policy": "ExactTime"},
+                    "sync": {"mode": "receipt_time", "max_interval": 0.2},
                 },
             ],
         }
     )
 
     assert "queue_size" not in loaded.nodes[0].parameters
-    assert loaded.nodes[0].sync["policy"] == "ExactTime"
+    assert loaded.nodes[0].sync["mode"] == "receipt_time"
     assert loaded.nodes[0].sync["queue_size"] == 5
+    assert loaded.nodes[0].sync["max_interval"] == 0.2
+
+
+def test_graph_load_rejects_removed_sync_policy() -> None:
+    with pytest.raises(ValueError, match="sync.policy"):
+        graph_from_dict(
+            {
+                "version": 2,
+                "nodes": [
+                    {
+                        "type": "filter",
+                        "name": "PointCloudMergerXYZI_1",
+                        "package": "pcl_filter_components_xyzi",
+                        "filter": "PointCloudMergerXYZI",
+                        "input_type": "PointXYZI,PointXYZI",
+                        "output_type": "PointXYZI",
+                        "sync": {"policy": "ExactTime"},
+                    },
+                ],
+            }
+        )
 
 
 def test_graph_round_trip_preserves_ros_message_compatibility(tmp_path: Path) -> None:

@@ -39,13 +39,16 @@ saved YAML.
 Components with one input port process each incoming message independently.
 Components with more than one input port get synchronization parameters:
 
-- `sync.policy`: `ExactTime` or `ApproximateTime`.
+- `sync.mode`: `receipt_time` or `latest`.
 - `sync.queue_size`: how many unmatched messages to retain per input port.
-- `sync.slop`: timestamp tolerance for approximate matching.
+- `sync.max_interval`: maximum receipt-time span across a synchronized input set.
 
-These parameters exist only for multi-input components. A complete synchronized
-input set is then available through the same `takeInput<AdapterT>("port")`
-accessors used by single-input components.
+Receipt-time synchronization uses `node.get_clock()->now()` in the subscription
+callback and ignores message/header stamps. Nodes using ROS time, including sim
+time, synchronize against that node clock. `latest` mode fires whenever any input
+updates after all ports have a latest message. These parameters exist only for
+multi-input components. A complete input set is then available through the same
+`takeInput<AdapterT>("port")` accessors used by single-input components.
 
 ## Creating a Custom Component
 

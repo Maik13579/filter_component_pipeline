@@ -44,7 +44,8 @@ nodes:
       cloud:
         qos: {durability: transient_local}
     sync:
-      policy: ExactTime
+      mode: receipt_time
+      max_interval: 0.1
   - type: topic
     topic: /filtered
     input_type: PointXYZI
@@ -76,7 +77,8 @@ edges:
   EXPECT_EQ(graph.nodes[1].inputs.at("cloud").at("depth"), "8");
   EXPECT_EQ(graph.nodes[1].inputs.at("cloud").at("reliability"), "reliable");
   EXPECT_EQ(graph.nodes[1].outputs.at("cloud").at("durability"), "transient_local");
-  EXPECT_EQ(graph.nodes[1].sync.at("policy"), "ExactTime");
+  EXPECT_EQ(graph.nodes[1].sync.at("mode"), "receipt_time");
+  EXPECT_EQ(graph.nodes[1].sync.at("max_interval"), "0.1");
   EXPECT_EQ(graph.nodes[3].topic, "/pcl_pipeline/voxel_to_output");
   EXPECT_TRUE(graph.nodes[3].qos.empty());
   EXPECT_DOUBLE_EQ(graph.nodes[3].x, 120.0);
@@ -86,6 +88,27 @@ edges:
   EXPECT_EQ(graph.edges[0].to.direction, "input");
   EXPECT_EQ(graph.edges[0].to.port, "cloud");
   EXPECT_EQ(graph.edges[1].from.port, "cloud");
+}
+
+TEST(PipelineGraph, RejectsRemovedSyncPolicy)
+{
+  const auto path = writeTempPipeline(R"(
+version: 2
+nodes:
+  - type: filter
+    name: PointCloudMergerXYZI_1
+    package: pcl_filter_components_xyzi
+    filter: PointCloudMergerXYZI
+    input_type: PointXYZI,PointXYZI
+    output_type: PointXYZI
+    sync:
+      policy: ExactTime
+edges: []
+)");
+
+  EXPECT_THROW(
+    (void)filter_component_factory::pipeline::loadPipelineGraph(path),
+    std::runtime_error);
 }
 
 TEST(PipelineGraph, RejectsMissingEndpointDirection)

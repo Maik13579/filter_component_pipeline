@@ -1435,17 +1435,17 @@ class PipelineEditor(Plugin):
             if self._filter_has_multiple_inputs(node):
                 sync = QWidget(dialog)
                 sync_form = QFormLayout(sync)
-                policy = QComboBox(dialog)
-                policy.addItems(["ExactTime", "ApproximateTime"])
-                policy.setCurrentText(str(node.sync.get("policy", "ExactTime")))
-                sync_widgets["policy"] = policy
-                sync_form.addRow("Policy", policy)
+                mode = QComboBox(dialog)
+                mode.addItems(["receipt_time", "latest"])
+                mode.setCurrentText(str(node.sync.get("mode", "receipt_time")))
+                sync_widgets["mode"] = mode
+                sync_form.addRow("Mode", mode)
                 queue_size = QLineEdit(str(node.sync.get("queue_size", 10)), dialog)
                 sync_widgets["queue_size"] = queue_size
                 sync_form.addRow("Queue size", queue_size)
-                slop = QLineEdit(str(node.sync.get("slop", 0.05)), dialog)
-                sync_widgets["slop"] = slop
-                sync_form.addRow("Slop seconds", slop)
+                max_interval = QLineEdit(str(node.sync.get("max_interval", 0.05)), dialog)
+                sync_widgets["max_interval"] = max_interval
+                sync_form.addRow("Max interval seconds", max_interval)
                 tabs.addTab(sync, "Sync")
             layout.addWidget(tabs)
         else:
@@ -1481,16 +1481,16 @@ class PipelineEditor(Plugin):
                     sync = {}
                     if sync_widgets:
                         sync = {
-                            "policy": self._qos_widget_text(sync_widgets["policy"]),
+                            "mode": self._qos_widget_text(sync_widgets["mode"]),
                             "queue_size": self._parse_typed_scalar(
                                 self._qos_widget_text(sync_widgets["queue_size"]),
                                 10,
                                 "Queue size",
                             ),
-                            "slop": self._parse_typed_scalar(
-                                self._qos_widget_text(sync_widgets["slop"]),
+                            "max_interval": self._parse_typed_scalar(
+                                self._qos_widget_text(sync_widgets["max_interval"]),
                                 0.05,
-                                "Slop seconds",
+                                "Max interval seconds",
                             ),
                         }
                     inputs = self._collect_port_qos(node.inputs, input_qos_widgets)
@@ -1694,7 +1694,7 @@ class PipelineEditor(Plugin):
         return len(self._stream_types(input_type)) > 1
 
     def _default_sync(self) -> dict[str, object]:
-        return {"policy": "ExactTime", "queue_size": 10, "slop": 0.05}
+        return {"mode": "receipt_time", "queue_size": 10, "max_interval": 0.05}
 
     def _rename_node(self, node: Node, new_id: str) -> bool:
         if not new_id:
@@ -1844,7 +1844,7 @@ class PipelineEditor(Plugin):
     def _migrate_legacy_sync_parameters(self, node: Node) -> None:
         if not self._filter_has_multiple_inputs(node):
             return
-        for key in ("policy", "queue_size", "slop"):
+        for key in ("policy", "queue_size", "slop", "max_interval"):
             if key in node.parameters:
                 node.sync.setdefault(key, node.parameters.pop(key))
 

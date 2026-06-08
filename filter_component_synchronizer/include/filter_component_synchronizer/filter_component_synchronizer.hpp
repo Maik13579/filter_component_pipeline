@@ -20,34 +20,33 @@
 #include <utility>
 #include <vector>
 
-#include <builtin_interfaces/msg/time.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 namespace filter_component_synchronizer
 {
 
-enum class SyncPolicy
+enum class SyncMode
 {
-  ExactTime,
-  ApproximateTime,
+  ReceiptTime,
+  Latest,
 };
 
-inline SyncPolicy syncPolicyFromString(const std::string & value)
+inline SyncMode syncModeFromString(const std::string & value)
 {
-  if (value == "ExactTime") {
-    return SyncPolicy::ExactTime;
+  if (value == "receipt_time") {
+    return SyncMode::ReceiptTime;
   }
-  if (value == "ApproximateTime") {
-    return SyncPolicy::ApproximateTime;
+  if (value == "latest") {
+    return SyncMode::Latest;
   }
-  throw std::invalid_argument("Unsupported sync policy '" + value + "'");
+  throw std::invalid_argument("Unsupported sync mode '" + value + "'");
 }
 
 struct SynchronizerOptions
 {
-  SyncPolicy policy{SyncPolicy::ExactTime};
+  SyncMode mode{SyncMode::ReceiptTime};
   size_t queue_size{10U};
-  double slop{0.05};
+  double max_interval{0.05};
 };
 
 template <typename AdapterT>
@@ -56,33 +55,12 @@ using CustomMessage = typename rclcpp::TypeAdapter<AdapterT>::custom_type;
 namespace detail
 {
 
-inline std::uint64_t stampToMicroseconds(const builtin_interfaces::msg::Time & stamp)
+inline std::int64_t secondsToNanoseconds(double seconds)
 {
-  return (static_cast<std::uint64_t>(stamp.sec) * 1000000U) +
-         (static_cast<std::uint64_t>(stamp.nanosec) / 1000U);
-}
-
-inline std::uint64_t stampToMicroseconds(const rclcpp::Time & stamp)
-{
-  return static_cast<std::uint64_t>(stamp.nanoseconds() / 1000);
-}
-
-template <typename StampT>
-std::uint64_t stampToMicroseconds(const StampT & stamp)
-{
-  return static_cast<std::uint64_t>(stamp);
+  return static_cast<std::int64_t>(std::llround(seconds * 1000000000.0));
 }
 
 }  // namespace detail
-
-template <typename AdapterT>
-struct InputStamp
-{
-  static std::uint64_t stamp(const CustomMessage<AdapterT> & message)
-  {
-    return detail::stampToMicroseconds(message.header.stamp);
-  }
-};
 
 class FilterComponentSynchronizer
 {
@@ -98,8 +76,8 @@ public:
     if (options_.queue_size == 0U) {
       options_.queue_size = 1U;
     }
-    if (options_.slop < 0.0) {
-      options_.slop = 0.0;
+    if (options_.max_interval < 0.0) {
+      options_.max_interval = 0.0;
     }
   }
 
@@ -116,11 +94,16 @@ public:
 
     auto holder = std::make_unique<InputHolder<AdapterT>>();
     auto * typed_holder = holder.get();
+    auto clock = node.get_clock();
     holder->subscription = node.template create_subscription<AdapterT>(
       topic_name,
       qos,
-      [this, port_name, typed_holder](std::unique_ptr<CustomMessage<AdapterT>> message) {
-        this->storeMessage<AdapterT>(port_name, *typed_holder, std::move(message));
+      [this, port_name, typed_holder, clock](std::unique_ptr<CustomMessage<AdapterT>> message) {
+        this->storeMessage<AdapterT>(
+          port_name,
+          *typed_holder,
+          std::move(message),
+          clock->now().nanoseconds());
       });
     input_order_.push_back(port_name);
     inputs_.emplace(port_name, std::move(holder));
@@ -138,6 +121,9 @@ public:
   {
     std::lock_guard<std::mutex> lock{mutex_};
     auto & holder = getTypedHolder<AdapterT>(port_name);
+    if (options_.mode == SyncMode::Latest && holder.latest) {
+      return std::make_unique<CustomMessage<AdapterT>>(*holder.latest);
+    }
     return std::move(holder.latest);
   }
 
@@ -159,9 +145,10 @@ private:
 
     virtual ~InputConcept() = default;
     virtual bool hasQueued() const = 0;
-    virtual std::uint64_t stampAt(size_t index) const = 0;
+    virtual bool hasLatest() const = 0;
+    virtual std::int64_t stampAt(size_t index) const = 0;
     virtual size_t queuedSize() const = 0;
-    virtual void moveQueuedToLatest(size_t index) = 0;
+    virtual void moveQueuedToLatestAndDropThrough(size_t index) = 0;
     virtual void popFront() = 0;
     virtual void trimTo(size_t queue_size) = 0;
 
@@ -172,6 +159,12 @@ private:
   template <typename AdapterT>
   struct InputHolder : InputConcept
   {
+    struct QueuedMessage
+    {
+      std::int64_t stamp{0};
+      std::unique_ptr<CustomMessage<AdapterT>> message;
+    };
+
     InputHolder()
     : InputConcept(std::type_index(typeid(AdapterT)))
     {
@@ -182,9 +175,14 @@ private:
       return !queued.empty();
     }
 
-    std::uint64_t stampAt(size_t index) const override
+    bool hasLatest() const override
     {
-      return InputStamp<AdapterT>::stamp(*queued.at(index));
+      return latest != nullptr;
+    }
+
+    std::int64_t stampAt(size_t index) const override
+    {
+      return queued.at(index).stamp;
     }
 
     size_t queuedSize() const override
@@ -192,12 +190,12 @@ private:
       return queued.size();
     }
 
-    void moveQueuedToLatest(size_t index) override
+    void moveQueuedToLatestAndDropThrough(size_t index) override
     {
-      latest = std::move(queued.at(index));
+      latest = std::move(queued.at(index).message);
       using DifferenceType =
-        typename std::deque<std::unique_ptr<CustomMessage<AdapterT>>>::difference_type;
-      queued.erase(queued.begin() + static_cast<DifferenceType>(index));
+        typename std::deque<QueuedMessage>::difference_type;
+      queued.erase(queued.begin(), queued.begin() + static_cast<DifferenceType>(index + 1U));
     }
 
     void popFront() override
@@ -212,7 +210,7 @@ private:
       }
     }
 
-    std::deque<std::unique_ptr<CustomMessage<AdapterT>>> queued;
+    std::deque<QueuedMessage> queued;
     std::unique_ptr<CustomMessage<AdapterT>> latest;
   };
 
@@ -220,7 +218,8 @@ private:
   void storeMessage(
     const std::string & port_name,
     InputHolder<AdapterT> & holder,
-    std::unique_ptr<CustomMessage<AdapterT>> message)
+    std::unique_ptr<CustomMessage<AdapterT>> message,
+    std::int64_t receipt_stamp)
   {
     ReadyCallback callback;
     {
@@ -228,8 +227,12 @@ private:
       if (inputs_.count(port_name) == 0U) {
         return;
       }
-      holder.queued.push_back(std::move(message));
-      holder.trimTo(options_.queue_size);
+      if (options_.mode == SyncMode::Latest) {
+        holder.latest = std::move(message);
+      } else {
+        holder.queued.push_back({receipt_stamp, std::move(message)});
+        holder.trimTo(options_.queue_size);
+      }
       if (trySynchronizeLocked()) {
         callback = ready_callback_;
       }
@@ -244,98 +247,85 @@ private:
     if (input_order_.empty()) {
       return false;
     }
+
+    if (options_.mode == SyncMode::Latest) {
+      for (const auto & port_name : input_order_) {
+        if (!inputs_.at(port_name)->hasLatest()) {
+          return false;
+        }
+      }
+      return true;
+    }
+
     for (const auto & port_name : input_order_) {
       if (!inputs_.at(port_name)->hasQueued()) {
         return false;
       }
     }
-
     auto selected = std::unordered_map<std::string, size_t>{};
     if (input_order_.size() == 1U) {
       selected[input_order_.front()] = 0U;
-    } else if (options_.policy == SyncPolicy::ExactTime) {
-      if (!selectExactLocked(selected)) {
-        return false;
-      }
-    } else if (!selectApproximateLocked(selected)) {
+    } else if (!selectReceiptTimeLocked(selected)) {
       return false;
     }
 
     for (const auto & port_name : input_order_) {
-      inputs_.at(port_name)->moveQueuedToLatest(selected.at(port_name));
+      inputs_.at(port_name)->moveQueuedToLatestAndDropThrough(selected.at(port_name));
     }
     return true;
   }
 
-  bool selectExactLocked(std::unordered_map<std::string, size_t> & selected)
+  bool selectReceiptTimeLocked(std::unordered_map<std::string, size_t> & selected)
   {
-    while (allHaveQueuedLocked()) {
-      const auto minmax = queuedStampRangeLocked();
-      if (minmax.first == minmax.second) {
-        for (const auto & port_name : input_order_) {
-          selected[port_name] = 0U;
-        }
-        return true;
-      }
-      for (const auto & port_name : input_order_) {
-        auto & input = *inputs_.at(port_name);
-        if (input.stampAt(0U) == minmax.first) {
-          input.popFront();
-        }
-      }
-    }
-    return false;
-  }
-
-  bool selectApproximateLocked(std::unordered_map<std::string, size_t> & selected)
-  {
-    const auto reference_stamp = latestQueuedStampLocked();
-    const auto slop_us = static_cast<std::uint64_t>(std::llround(options_.slop * 1000000.0));
+    auto best_span = std::numeric_limits<std::int64_t>::max();
+    auto best_selected = std::unordered_map<std::string, size_t>{};
 
     for (const auto & port_name : input_order_) {
       const auto & input = *inputs_.at(port_name);
-      auto best_index = input.queuedSize();
-      auto best_delta = std::numeric_limits<std::uint64_t>::max();
       for (size_t index = 0; index < input.queuedSize(); ++index) {
-        const auto stamp = input.stampAt(index);
-        const auto delta = stamp > reference_stamp ? stamp - reference_stamp : reference_stamp - stamp;
-        if (delta <= slop_us && delta < best_delta) {
-          best_index = index;
-          best_delta = delta;
+        auto candidate = std::unordered_map<std::string, size_t>{};
+        const auto minimum = input.stampAt(index);
+        auto maximum = minimum;
+        candidate[port_name] = index;
+        auto complete = true;
+        for (const auto & other_port_name : input_order_) {
+          if (other_port_name == port_name) {
+            continue;
+          }
+          const auto & other = *inputs_.at(other_port_name);
+          auto other_index = other.queuedSize();
+          for (size_t other_candidate = 0; other_candidate < other.queuedSize(); ++other_candidate) {
+            if (other.stampAt(other_candidate) >= minimum) {
+              other_index = other_candidate;
+              break;
+            }
+          }
+          if (other_index == other.queuedSize()) {
+            complete = false;
+            break;
+          }
+          candidate[other_port_name] = other_index;
+          maximum = std::max(maximum, other.stampAt(other_index));
+        }
+        if (complete && maximum - minimum < best_span) {
+          best_span = maximum - minimum;
+          best_selected = std::move(candidate);
         }
       }
-      if (best_index == input.queuedSize()) {
-        dropClearlyOldMessagesLocked(reference_stamp, slop_us);
-        return false;
-      }
-      selected[port_name] = best_index;
     }
-    return true;
-  }
 
-  bool allHaveQueuedLocked() const
-  {
-    return std::all_of(
-      input_order_.begin(),
-      input_order_.end(),
-      [this](const auto & port_name) {return inputs_.at(port_name)->hasQueued();});
-  }
-
-  std::pair<std::uint64_t, std::uint64_t> queuedStampRangeLocked() const
-  {
-    auto minimum = inputs_.at(input_order_.front())->stampAt(0U);
-    auto maximum = minimum;
-    for (const auto & port_name : input_order_) {
-      const auto stamp = inputs_.at(port_name)->stampAt(0U);
-      minimum = std::min(minimum, stamp);
-      maximum = std::max(maximum, stamp);
+    const auto max_interval_ns = detail::secondsToNanoseconds(options_.max_interval);
+    if (!best_selected.empty() && best_span <= max_interval_ns) {
+      selected = std::move(best_selected);
+      return true;
     }
-    return {minimum, maximum};
+    dropClearlyOldMessagesLocked(latestQueuedStampLocked(), max_interval_ns);
+    return false;
   }
 
-  std::uint64_t latestQueuedStampLocked() const
+  std::int64_t latestQueuedStampLocked() const
   {
-    std::uint64_t stamp = 0U;
+    auto stamp = std::numeric_limits<std::int64_t>::min();
     for (const auto & port_name : input_order_) {
       const auto & input = *inputs_.at(port_name);
       for (size_t index = 0; index < input.queuedSize(); ++index) {
@@ -345,14 +335,12 @@ private:
     return stamp;
   }
 
-  void dropClearlyOldMessagesLocked(std::uint64_t reference_stamp, std::uint64_t slop_us)
+  void dropClearlyOldMessagesLocked(std::int64_t newest_seen_stamp, std::int64_t max_interval_ns)
   {
+    const auto oldest_allowed = newest_seen_stamp - max_interval_ns;
     for (const auto & port_name : input_order_) {
       auto & input = *inputs_.at(port_name);
-      while (
-        input.queuedSize() > 1U &&
-        input.stampAt(0U) + slop_us < reference_stamp)
-      {
+      while (input.queuedSize() > 0U && input.stampAt(0U) < oldest_allowed) {
         input.popFront();
       }
     }

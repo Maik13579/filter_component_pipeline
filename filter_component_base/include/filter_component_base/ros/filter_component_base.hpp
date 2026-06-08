@@ -157,11 +157,11 @@ public:
     if (input_ports_.size() > 1U) {
       declareParameterIfNotDeclared(
         *this,
-        "sync.policy",
-        std::string{"ExactTime"},
+        "sync.mode",
+        std::string{"receipt_time"},
         makeParameterDescriptor(
-          "Input synchronization policy.",
-          "Supported values: ExactTime, ApproximateTime."));
+          "Input synchronization mode.",
+          "Supported values: receipt_time, latest."));
       declareParameterIfNotDeclared(
         *this,
         "sync.queue_size",
@@ -169,10 +169,10 @@ public:
         makeIntegerRangeParameterDescriptor("Maximum unmatched input messages kept per port.", 1, 100000));
       declareParameterIfNotDeclared(
         *this,
-        "sync.slop",
+        "sync.max_interval",
         0.05,
         makeFloatingPointRangeParameterDescriptor(
-          "Maximum timestamp difference for ApproximateTime synchronization in seconds.",
+          "Maximum receipt-time span across a synchronized input set in seconds.",
           0.0,
           3600.0));
     }
@@ -253,12 +253,12 @@ protected:
 
     auto sync_options = filter_component_synchronizer::SynchronizerOptions{};
     if (input_ports_.size() > 1U) {
-      sync_options.policy = filter_component_synchronizer::syncPolicyFromString(
-        getParameter<std::string>(*this, "sync.policy"));
+      sync_options.mode = filter_component_synchronizer::syncModeFromString(
+        getParameter<std::string>(*this, "sync.mode"));
       const auto sync_queue_size = getParameter<int>(*this, "sync.queue_size");
       sync_options.queue_size = sync_queue_size > 0 ?
         static_cast<size_t>(sync_queue_size) : 1U;
-      sync_options.slop = getParameter<double>(*this, "sync.slop");
+      sync_options.max_interval = getParameter<double>(*this, "sync.max_interval");
     }
     synchronizer_ = std::make_unique<filter_component_synchronizer::FilterComponentSynchronizer>(
       sync_options,
