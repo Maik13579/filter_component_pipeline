@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>grid_map_components_filter_chain</name>
+  <version>0.1.0</version>
+  <description>ROS filters::FilterChain component for grid_map::GridMap streams.</description>
+  <maintainer email="maik.knof@gmx.de">Maik Knof</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>filter_component_base</depend>
+  <depend>filter_component_synchronizer</depend>
+  <depend>filters</depend>
+  <depend>grid_map_components_type_adapter</depend>
+  <depend>grid_map_core</depend>
+  <depend>grid_map_filters</depend>
+  <depend>grid_map_msgs</depend>
+  <depend>grid_map_ros</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>rclcpp_lifecycle</depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>filter_component_editor</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <filter_component
+      filter="RosFilterChainGridMap"
+      kind="filter_chain"
+      chain_data_type="grid_map::GridMap"
+      input="GridMap"
+      input_ports="map:GridMap"
+      output="GridMap"
+      output_ports="map:GridMap"/>
+  </export>
+</package>
