@@ -14,6 +14,7 @@ class DummyPlugin:
 class DummyQt:
     Horizontal = 1
     DashLine = 2
+    UserRole = 3
 
 
 def install_qt_stubs() -> None:
@@ -50,6 +51,8 @@ def install_qt_stubs() -> None:
         "QTextEdit",
         "QSplitter",
         "QTabWidget",
+        "QTreeWidget",
+        "QTreeWidgetItem",
         "QVBoxLayout",
         "QWidget",
     ):

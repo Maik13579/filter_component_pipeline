@@ -25,18 +25,32 @@ class ComponentParameterDiscovery:
         self._runtime = runtime or LivePipelineRuntime()
 
     def parameters_for_component(self, package: str, component_class: str) -> ParameterMetadata:
-        return self._load_parameters(package, component_class)
+        return self._load_parameters(package, component_class, {}, configure=False)
 
-    def _load_parameters(self, package: str, component_class: str) -> ParameterMetadata:
+    def parameters_for_configured_component(
+        self,
+        package: str,
+        component_class: str,
+        parameters: dict[str, object],
+    ) -> ParameterMetadata:
+        return self._load_parameters(package, component_class, parameters, configure=True)
+
+    def _load_parameters(
+        self,
+        package: str,
+        component_class: str,
+        parameters: dict[str, object],
+        configure: bool,
+    ) -> ParameterMetadata:
         node_name = self._probe_node_name(component_class)
         self._runtime.load(
             node_name,
             {
                 "package": package,
                 "component_class": component_class,
-                "parameters": {},
+                "parameters": dict(parameters),
             },
-            configure=False,
+            configure=configure,
         )
         runtime_node = self._runtime.node
         full_node_name = self._runtime.loaded[node_name].full_node_name
