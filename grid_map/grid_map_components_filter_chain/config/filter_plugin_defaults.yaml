@@ -76,3 +76,8 @@ gridMapFilters/ColorBlendingFilter:
 
 gridMapFilters/SetBasicLayersFilter:
   layers: [elevation]
+
+gridMapCv/InpaintFilter:
+  input_layer: elevation
+  output_layer: inpaint
+  radius: 0.05

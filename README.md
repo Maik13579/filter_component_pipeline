@@ -17,7 +17,7 @@ leave, or connect parts of the graph. Topic nodes are not loaded as components.
 
 - [Pipeline Model](#pipeline-model)
 - [Packages](#packages)
-- [ROS Filters Chains](#ros-filters-chains)
+- [ROS Filter Chains](#ros-filter-chains)
 - [Architecture](#architecture)
 - [Editor](#editor)
 - [Graph YAML](#graph-yaml)
@@ -51,20 +51,25 @@ filters, topic types, and component classes.
   pipeline authoring and validation.
 - [pcl](pcl/README.md): PCL-specific algorithms, type adapters, point-type
   component packages, and PCL validation tests.
+- [grid_map](grid_map/README.md): Grid Map type adapter and filter-chain
+  wrapper packages for upstream `grid_map` filters.
 
-## ROS Filters Chains
+## ROS Filter Chains
 
 The framework can also host upstream [`ros/filters`](https://github.com/ros/filters)
 `filters::FilterChain<T>` pipelines as regular lifecycle filter components.
-Use `pcl_filter_components_filter_chain` for the PCL chain components and
-configure the chain parameters under the component's `filter_chain` prefix.
+Use `pcl_filter_components_filter_chain` for the PCL chain components or
+`grid_map_components_filter_chain` for Grid Map chains and configure the chain
+parameters under the component's `filter_chain` prefix.
+
+![Filter Chain Editor Nodes](filter_component_editor/doc/filters.png)
 
 ## Architecture
 
 The root packages define the generic framework. Concrete component families live
 in their own package groups and export discovery metadata through the generic
-`<filter_component>` package tag. The current repository includes a PCL
-component family under [`pcl/`](pcl/README.md).
+`<filter_component>` package tag. The current repository includes component
+families under [`pcl/`](pcl/README.md) and [`grid_map/`](grid_map/README.md).
 
 ```text
 filter_component_synchronizer

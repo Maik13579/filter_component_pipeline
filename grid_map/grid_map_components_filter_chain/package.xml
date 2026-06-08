@@ -14,6 +14,7 @@
   <depend>filters</depend>
   <depend>grid_map_components_type_adapter</depend>
   <depend>grid_map_core</depend>
+  <depend>grid_map_cv</depend>
   <depend>grid_map_filters</depend>
   <depend>grid_map_msgs</depend>
   <depend>grid_map_ros</depend>

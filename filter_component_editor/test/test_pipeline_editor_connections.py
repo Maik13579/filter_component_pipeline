@@ -158,6 +158,8 @@ class FakeNodeItem:
         self.node = node
         self.visible = True
         self._pos = types.SimpleNamespace(x=lambda: 0.0, y=lambda: 0.0)
+        self.input_port = FakePort(self)
+        self.output_port = FakePort(self)
 
     def setVisible(self, visible: bool) -> None:
         self.visible = visible
@@ -167,6 +169,17 @@ class FakeNodeItem:
 
     def pos(self):
         return self._pos
+
+    def output_port_name(self, _item) -> str:
+        return "out"
+
+
+class FakePort:
+    def __init__(self, parent) -> None:
+        self._parent = parent
+
+    def parentItem(self):
+        return self._parent
 
 
 class FakeToggle:
@@ -566,6 +579,30 @@ def test_load_defaults_missing_show_filters_to_enabled(monkeypatch: pytest.Monke
 
     assert editor.show_filters is True
     assert editor.filter_visibility_toggle.checked is True
+
+
+def test_create_topic_from_output_port_cancels_pending_drag() -> None:
+    node = filter_node("source", output_ports="cloud:PointXYZI")
+    item = FakeNodeItem(node)
+    topic_item = FakeNodeItem(topic("/source_out", "PointXYZI"))
+    editor = editor_for(Graph(nodes=[node]))
+    editor.items_by_id = {node.id: item, topic_item.node.id: topic_item}
+    editor.connection_source = item
+    editor.connection_source_port = "out"
+    editor._clear_connection_preview = lambda: None
+    editor._clear_connection_highlights = lambda: None
+    editor._resolve_source_port_for_new_topic = lambda _item, _port: "cloud"
+    editor._create_topic_for_port = lambda _item, _outgoing, _port: topic_item
+    connections = []
+    editor._connect_nodes = lambda source, target, source_port, target_port: connections.append(
+        (source.node.id, target.node.id, source_port, target_port)
+    )
+
+    assert editor.create_topic_from_port(item.output_port) is True
+
+    assert editor.connection_source is None
+    assert editor.connection_source_port == "out"
+    assert connections == [("source", "/source_out", "cloud", "in")]
 
 
 def test_chain_parameter_rewrite_compacts_indices_and_removes_stale_entries() -> None:

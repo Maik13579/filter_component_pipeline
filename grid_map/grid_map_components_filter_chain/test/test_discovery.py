@@ -74,6 +74,19 @@ def test_grid_map_filters_plugins_are_discoverable_and_chain_compatible() -> Non
         )
 
 
+def test_grid_map_cv_plugins_are_discoverable_and_chain_compatible() -> None:
+    discovery = discover_filters()
+    plugins = {
+        item.name: item
+        for item in discovery.filter_plugins
+        if item.package == "grid_map_cv"
+    }
+
+    assert plugins["gridMapCv/InpaintFilter"].base_class_type == (
+        "filters::FilterBase<grid_map::GridMap>"
+    )
+
+
 def test_grid_map_filter_chain_plugin_defaults_are_discoverable() -> None:
     discovery = discover_filters()
     grid_map_plugins = {
@@ -98,3 +111,8 @@ def test_grid_map_filter_chain_plugin_defaults_are_discoverable() -> None:
         1.0,
     ]
     assert defaults["gridMapFilters/BufferNormalizerFilter"] == {}
+    assert defaults["gridMapCv/InpaintFilter"] == {
+        "input_layer": "elevation",
+        "output_layer": "inpaint",
+        "radius": 0.05,
+    }

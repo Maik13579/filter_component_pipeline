@@ -1222,6 +1222,7 @@ class PipelineEditor(Plugin):
             return False
         if node_item.node.type != "filter":
             return False
+        self._cancel_connection_drag()
         if clicked_item == node_item.output_port:
             source_port = node_item.output_port_name(clicked_item)
             source_port = self._resolve_source_port_for_new_topic(node_item, source_port)
@@ -1310,6 +1311,14 @@ class PipelineEditor(Plugin):
         self._set_connection_preview(node_item.output_anchor(self.connection_source_port), scene_pos)
         self.status.setText(f"Connection start: {node_item.node.id}. Drop on a compatible node.")
         return True
+
+    def _cancel_connection_drag(self) -> None:
+        if self.connection_source is None:
+            return
+        self._clear_connection_preview()
+        self._clear_connection_highlights()
+        self.connection_source = None
+        self.connection_source_port = "out"
 
     def update_connection_drag(self, scene_pos: QPointF) -> bool:
         if self.connection_source is None or self.connection_preview is None:

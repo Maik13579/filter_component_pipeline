@@ -14,6 +14,7 @@ find_package(filter_component_synchronizer REQUIRED)
 find_package(filters REQUIRED)
 find_package(grid_map_components_type_adapter REQUIRED)
 find_package(grid_map_core REQUIRED)
+find_package(grid_map_cv REQUIRED)
 find_package(grid_map_filters REQUIRED)
 find_package(grid_map_msgs REQUIRED)
 find_package(grid_map_ros REQUIRED)
@@ -34,6 +35,7 @@ ament_target_dependencies(${PROJECT_NAME}_components
   filters
   grid_map_components_type_adapter
   grid_map_core
+  grid_map_cv
   grid_map_filters
   grid_map_msgs
   grid_map_ros
@@ -71,6 +73,7 @@ ament_export_dependencies(
   filters
   grid_map_components_type_adapter
   grid_map_core
+  grid_map_cv
   grid_map_filters
   grid_map_msgs
   grid_map_ros
