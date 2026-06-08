@@ -33,10 +33,11 @@ class EdgeItem(QGraphicsLineItem):
         super().paint(painter, option, widget)
 
     def refresh(self) -> None:
-        source = self.source.output_anchor(self.edge.source.port)
-        target = self.target.input_anchor(self.edge.target.port)
+        source = self.source.center_anchor()
+        target = self.target.center_anchor()
+        tip = self.target.boundary_anchor_from(source)
         self.setLine(source.x(), source.y(), target.x(), target.y())
-        self._refresh_arrow(self.arrow, source, target)
+        self._refresh_arrow(self.arrow, source, tip)
 
     def refresh_label(self) -> None:
         pass

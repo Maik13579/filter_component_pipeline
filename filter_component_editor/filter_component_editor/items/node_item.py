@@ -121,6 +121,33 @@ class NodeItem(QGraphicsRectItem):
     def output_anchor(self, port: str = "out") -> QPointF:
         return self.output_port.sceneBoundingRect().center()
 
+    def center_anchor(self) -> QPointF:
+        if self.node.type == "topic":
+            return self.mapToScene(QPointF(28.0, 34.0))
+        return self.mapToScene(self.rect().center())
+
+    def boundary_anchor_from(self, source: QPointF) -> QPointF:
+        center = self.center_anchor()
+        dx = source.x() - center.x()
+        dy = source.y() - center.y()
+        if dx == 0.0 and dy == 0.0:
+            return center
+        if self.node.type == "topic":
+            return self._diamond_boundary_anchor(center, dx, dy)
+        return self._rect_boundary_anchor(center, dx, dy)
+
+    def _diamond_boundary_anchor(self, center: QPointF, dx: float, dy: float) -> QPointF:
+        half_width = 24.0
+        half_height = 26.0
+        scale = 1.0 / ((abs(dx) / half_width) + (abs(dy) / half_height))
+        return QPointF(center.x() + dx * scale, center.y() + dy * scale)
+
+    def _rect_boundary_anchor(self, center: QPointF, dx: float, dy: float) -> QPointF:
+        half_width = self.rect().width() / 2.0
+        half_height = self.rect().height() / 2.0
+        scale = 1.0 / max(abs(dx) / half_width, abs(dy) / half_height)
+        return QPointF(center.x() + dx * scale, center.y() + dy * scale)
+
     def _port_positions(self) -> tuple[QPointF, QPointF]:
         width = self.rect().width()
         height = self.rect().height()
