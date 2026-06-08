@@ -632,6 +632,16 @@ class PipelineEditor(Plugin):
             if entry.get("name") or entry.get("type") or entry.get("params")
         ]
 
+    def _unique_chain_filter_name(self, plugin_name: str, entries: list[dict[str, object]]) -> str:
+        base = plugin_name.rsplit("/", 1)[-1].rsplit("::", 1)[-1] or "filter"
+        used = {str(entry.get("name", "")).strip() for entry in entries}
+        if base not in used:
+            return base
+        suffix = 2
+        while f"{base}_{suffix}" in used:
+            suffix += 1
+        return f"{base}_{suffix}"
+
     def _rewrite_chain_parameters(self, node: Node, entries: list[dict[str, object]]) -> None:
         prefix = self._chain_param_prefix(node)
         preserved = {
@@ -1859,7 +1869,11 @@ class PipelineEditor(Plugin):
             current = collect()
             node.parameters = current
             refresh_entries_from_parameters()
-            entries.append({"name": plugin.name.rsplit("/", 1)[-1], "type": plugin.name, "params": {}})
+            entries.append({
+                "name": self._unique_chain_filter_name(plugin.name, entries),
+                "type": plugin.name,
+                "params": {},
+            })
             selected_index["value"] = len(entries) - 1
             apply_chain_change(entries)
 

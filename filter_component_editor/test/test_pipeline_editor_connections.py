@@ -415,6 +415,17 @@ def test_chain_entries_round_trip_plugin_params() -> None:
     ]
 
 
+def test_unique_chain_filter_name_suffixes_duplicate_plugins() -> None:
+    editor = chain_editor_for(Graph(nodes=[chain_node()]))
+    entries = [
+        {"name": "VoxelGridXYZI", "type": "pkg/VoxelGridXYZI", "params": {}},
+        {"name": "VoxelGridXYZI_2", "type": "pkg/VoxelGridXYZI", "params": {}},
+    ]
+
+    assert editor._unique_chain_filter_name("pkg/VoxelGridXYZI", entries) == "VoxelGridXYZI_3"
+    assert editor._unique_chain_filter_name("pkg/PassThroughXYZI", entries) == "PassThroughXYZI"
+
+
 def test_filter_chain_sanitize_preserves_dynamic_plugin_parameters() -> None:
     node = chain_node(
         {
