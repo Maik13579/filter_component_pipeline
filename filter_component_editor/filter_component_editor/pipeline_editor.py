@@ -87,6 +87,7 @@ class PipelineEditor(Plugin):
         self.rewire_edge: EdgeItem | None = None
         self.rewire_preview: QGraphicsLineItem | None = None
         self.top_down_mode = True
+        self.show_topics = True
 
         self.widget = QWidget()
         layout = QHBoxLayout(self.widget)
@@ -117,9 +118,14 @@ class PipelineEditor(Plugin):
         self.status.setWordWrap(True)
         side.addWidget(self.status)
 
+        view_option_row = QHBoxLayout()
         self.top_down_toggle = QCheckBox("Top-down ports")
         self.top_down_toggle.setChecked(self.top_down_mode)
-        side.addWidget(self.top_down_toggle)
+        self.topic_visibility_toggle = QCheckBox("Show topics")
+        self.topic_visibility_toggle.setChecked(self.show_topics)
+        view_option_row.addWidget(self.top_down_toggle)
+        view_option_row.addWidget(self.topic_visibility_toggle)
+        side.addLayout(view_option_row)
 
         zoom_row = QHBoxLayout()
         zoom_out = QPushButton("-")
@@ -152,6 +158,7 @@ class PipelineEditor(Plugin):
         splitter.setSizes([260, 900])
 
         self.top_down_toggle.toggled.connect(self._set_top_down_mode)
+        self.topic_visibility_toggle.toggled.connect(self._set_topic_visibility)
         zoom_out.clicked.connect(lambda: self.zoom_canvas(1.0 / 1.2))
         zoom_in.clicked.connect(lambda: self.zoom_canvas(1.2))
         zoom_reset.clicked.connect(self.reset_zoom)
@@ -261,6 +268,8 @@ class PipelineEditor(Plugin):
         item.setPos(node.position["x"], node.position["y"])
         self.scene.addItem(item)
         self.items_by_id[node.id] = item
+        if node.type == "topic":
+            item.setVisible(self.show_topics)
         self.expand_scene_for_item(item)
         self._sync_live_pipeline()
 
@@ -269,6 +278,11 @@ class PipelineEditor(Plugin):
         for item in list(self.items_by_id.values()):
             self._redraw_node(item)
         self.refresh_edges()
+
+    def _set_topic_visibility(self, enabled: bool) -> None:
+        self.show_topics = enabled
+        self._refresh_topic_visibility()
+        self._rebuild_edges()
 
     def _choose_stream_type(self, title: str) -> str:
         types = [item.point_type for item in self.discovery.types if item.point_type]
@@ -954,7 +968,10 @@ class PipelineEditor(Plugin):
             compatibility=ROS_MESSAGE_COMPATIBILITY if compatibility == ROS_MESSAGE_COMPATIBILITY else "",
         )
         self.graph.edges.append(edge)
-        self._add_edge_item(edge, source, target)
+        if self.show_topics:
+            self._add_edge_item(edge, source, target)
+        else:
+            self._rebuild_edges()
         self._refresh_port_visibility()
         self.status.setText(f"Connected {source.node.id} -> {target.node.id}")
         if compatibility == ROS_MESSAGE_COMPATIBILITY:
@@ -1244,9 +1261,19 @@ class PipelineEditor(Plugin):
         self.scene.addItem(item)
         self.edge_items.append(item)
 
+    def _add_visual_edge_item(self, edge: Edge, source: NodeItem, target: NodeItem) -> None:
+        item = EdgeItem(edge, source, target, selectable=False)
+        self.scene.addItem(item)
+        self.edge_items.append(item)
+
     def _refresh_port_visibility(self) -> None:
         for item in self.items_by_id.values():
             item.update_port_visibility()
+
+    def _refresh_topic_visibility(self) -> None:
+        for item in self.items_by_id.values():
+            if item.node.type == "topic":
+                item.setVisible(self.show_topics)
 
     def refresh_edges(self) -> None:
         for edge in self.edge_items:
@@ -1839,7 +1866,10 @@ class PipelineEditor(Plugin):
     def _sync_positions(self) -> None:
         for item in self.items_by_id.values():
             item.node.position = {"x": float(item.pos().x()), "y": float(item.pos().y())}
-        self.graph.editor = {"orientation": "top_down" if self.top_down_mode else "left_right"}
+        self.graph.editor = {
+            "orientation": "top_down" if self.top_down_mode else "left_right",
+            "show_topics": self.show_topics,
+        }
 
     def _refresh_live_filter_parameters_for_save(self) -> None:
         for node in self.graph.nodes:
@@ -1882,9 +1912,13 @@ class PipelineEditor(Plugin):
             return
         orientation = self.graph.editor.get("orientation", "top_down")
         self.top_down_mode = orientation == "top_down"
+        self.show_topics = bool(self.graph.editor.get("show_topics", True))
         self.top_down_toggle.blockSignals(True)
         self.top_down_toggle.setChecked(self.top_down_mode)
         self.top_down_toggle.blockSignals(False)
+        self.topic_visibility_toggle.blockSignals(True)
+        self.topic_visibility_toggle.setChecked(self.show_topics)
+        self.topic_visibility_toggle.blockSignals(False)
         self.items_by_id.clear()
         self.edge_items.clear()
         self.scene.clear()
@@ -1894,6 +1928,7 @@ class PipelineEditor(Plugin):
             self.scene.addItem(item)
             self.items_by_id[node.id] = item
             self.expand_scene_for_item(item)
+        self._refresh_topic_visibility()
         self._rebuild_edges()
         self.fit_graph_view()
         self._sync_live_pipeline()
@@ -1902,9 +1937,60 @@ class PipelineEditor(Plugin):
         for item in self.edge_items:
             self.scene.removeItem(item)
         self.edge_items.clear()
+        self._refresh_topic_visibility()
+        if not self.show_topics:
+            self._rebuild_collapsed_topic_edges()
+            self._refresh_port_visibility()
+            return
         for edge in self.graph.edges:
             source = self.items_by_id.get(edge.source.node)
             target = self.items_by_id.get(edge.target.node)
             if source and target:
                 self._add_edge_item(edge, source, target)
         self._refresh_port_visibility()
+
+    def _rebuild_collapsed_topic_edges(self) -> None:
+        nodes_by_id = {node.id: node for node in self.graph.nodes}
+        incoming_by_topic: dict[str, list[Edge]] = {}
+        outgoing_by_topic: dict[str, list[Edge]] = {}
+        for edge in self.graph.edges:
+            source_node = nodes_by_id.get(edge.source.node)
+            target_node = nodes_by_id.get(edge.target.node)
+            if source_node is None or target_node is None:
+                continue
+            if source_node.type == "filter" and target_node.type == "topic":
+                incoming_by_topic.setdefault(target_node.id, []).append(edge)
+            elif source_node.type == "topic" and target_node.type == "filter":
+                outgoing_by_topic.setdefault(source_node.id, []).append(edge)
+            elif source_node.type != "topic" and target_node.type != "topic":
+                source = self.items_by_id.get(edge.source.node)
+                target = self.items_by_id.get(edge.target.node)
+                if source is not None and target is not None:
+                    self._add_edge_item(edge, source, target)
+
+        rendered_pairs: set[tuple[str, str, str, str]] = set()
+        for topic_id, incoming_edges in incoming_by_topic.items():
+            for incoming in incoming_edges:
+                source = self.items_by_id.get(incoming.source.node)
+                if source is None:
+                    continue
+                for outgoing in outgoing_by_topic.get(topic_id, []):
+                    target = self.items_by_id.get(outgoing.target.node)
+                    if target is None:
+                        continue
+                    pair = (
+                        incoming.source.node,
+                        incoming.source.port,
+                        outgoing.target.node,
+                        outgoing.target.port,
+                    )
+                    if pair in rendered_pairs:
+                        continue
+                    rendered_pairs.add(pair)
+                    compatibility = incoming.compatibility or outgoing.compatibility
+                    visual_edge = Edge(
+                        PortRef(incoming.source.node, incoming.source.port, "output"),
+                        PortRef(outgoing.target.node, outgoing.target.port, "input"),
+                        compatibility=compatibility,
+                    )
+                    self._add_visual_edge_item(visual_edge, source, target)

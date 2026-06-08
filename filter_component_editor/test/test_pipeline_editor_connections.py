@@ -107,6 +107,15 @@ def editor_for(graph: Graph) -> PipelineEditor:
     return editor
 
 
+class FakeNodeItem:
+    def __init__(self, node: Node) -> None:
+        self.node = node
+        self.visible = True
+
+    def setVisible(self, visible: bool) -> None:
+        self.visible = visible
+
+
 def topic(node_id: str, stream_type: str) -> Node:
     return Node(id=node_id, type="topic", topic=node_id, input_type=stream_type, output_type=stream_type)
 
@@ -186,3 +195,52 @@ def test_connection_verdict_returns_invalid_for_same_node() -> None:
 
     assert verdict.verdict == "invalid"
     assert "itself" in verdict.reason
+
+
+def test_refresh_topic_visibility_hides_only_topic_items() -> None:
+    source = filter_node("source")
+    topic_node = topic("/between", "PointXYZI")
+    editor = editor_for(Graph(nodes=[source, topic_node]))
+    source_item = FakeNodeItem(source)
+    topic_item = FakeNodeItem(topic_node)
+    editor.items_by_id = {source.id: source_item, topic_node.id: topic_item}
+    editor.show_topics = False
+
+    editor._refresh_topic_visibility()
+
+    assert source_item.visible is True
+    assert topic_item.visible is False
+
+
+def test_hidden_topic_edges_collapse_filter_topic_filter_path() -> None:
+    source = filter_node("source", output_ports="cloud:PointXYZI")
+    topic_node = topic("/between", "PointXYZI")
+    target = filter_node("target", input_ports="cloud:PointXYZI")
+    graph = Graph(
+        nodes=[source, topic_node, target],
+        edges=[
+            Edge(output("source", "cloud"), input_("/between", "in")),
+            Edge(output("/between", "out"), input_("target", "cloud")),
+        ],
+    )
+    editor = editor_for(graph)
+    editor.items_by_id = {
+        source.id: FakeNodeItem(source),
+        target.id: FakeNodeItem(target),
+    }
+    rendered = []
+    editor._add_visual_edge_item = lambda edge, source_item, target_item: rendered.append(
+        (edge, source_item.node.id, target_item.node.id)
+    )
+    editor._add_edge_item = lambda edge, source_item, target_item: None
+
+    editor._rebuild_collapsed_topic_edges()
+
+    assert len(rendered) == 1
+    visual_edge, source_id, target_id = rendered[0]
+    assert source_id == "source"
+    assert target_id == "target"
+    assert visual_edge.source.node == "source"
+    assert visual_edge.source.port == "cloud"
+    assert visual_edge.target.node == "target"
+    assert visual_edge.target.port == "cloud"
