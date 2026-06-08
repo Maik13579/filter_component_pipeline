@@ -131,6 +131,22 @@ class EdgeItem(QGraphicsLineItem):
         arrow.setPolygon(QPolygonF([target, left, right]))
 
 
+class PortItem(QGraphicsEllipseItem):
+    def __init__(self, label: str, diameter: float, label_color: QColor, parent) -> None:
+        super().__init__(0, 0, diameter, diameter, parent)
+        self.label = label
+        self.label_color = label_color
+
+    def paint(self, painter, option, widget=None) -> None:
+        super().paint(painter, option, widget)
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(max(7, font.pointSize() - 1))
+        painter.setFont(font)
+        painter.setPen(self.label_color)
+        painter.drawText(self.rect(), Qt.AlignCenter, self.label)
+
+
 class NodeItem(QGraphicsRectItem):
     def __init__(self, node: Node, editor: "PipelineEditor") -> None:
         title_text = node.topic if node.type == "topic" else node.name or node.id
@@ -174,14 +190,26 @@ class NodeItem(QGraphicsRectItem):
                 row.setPos(12, 8 + index * 21)
                 row.setBrush(self.editor.theme_color("text"))
         input_pos, output_pos = self._port_positions()
-        self.input_port = QGraphicsEllipseItem(input_pos.x(), input_pos.y(), 12, 12, self)
-        self.output_port = QGraphicsEllipseItem(output_pos.x(), output_pos.y(), 12, 12, self)
-        port_brush = QBrush(self.editor.theme_color("text") if node.type == "topic" else self.editor.theme_color("base"))
-        self.input_port.setBrush(port_brush)
-        self.output_port.setBrush(port_brush)
-        if node.type != "topic":
-            self.input_port.setPen(QPen(self._port_color(), 2.0))
-            self.output_port.setPen(QPen(self._port_color(), 2.0))
+        port_diameter = self._port_diameter()
+        if node.type == "topic":
+            self.input_port = QGraphicsEllipseItem(0, 0, port_diameter, port_diameter, self)
+            self.output_port = QGraphicsEllipseItem(0, 0, port_diameter, port_diameter, self)
+        else:
+            label_color = self.editor.theme_color("text")
+            self.input_port = PortItem("I", port_diameter, label_color, self)
+            self.output_port = PortItem("O", port_diameter, label_color, self)
+        self.input_port.setPos(input_pos)
+        self.output_port.setPos(output_pos)
+        if node.type == "topic":
+            port_brush = QBrush(self.editor.theme_color("text"))
+            self.input_port.setBrush(port_brush)
+            self.output_port.setBrush(port_brush)
+        else:
+            port_brush = QBrush(self._filter_port_color())
+            self.input_port.setBrush(port_brush)
+            self.output_port.setBrush(port_brush)
+            self.input_port.setPen(QPen(self.editor.theme_color("text"), 1.5))
+            self.output_port.setPen(QPen(self.editor.theme_color("text"), 1.5))
         self.update_port_visibility()
 
     def paint(self, painter, option, widget=None) -> None:
@@ -226,16 +254,17 @@ class NodeItem(QGraphicsRectItem):
     def _port_positions(self) -> tuple[QPointF, QPointF]:
         width = self.rect().width()
         height = self.rect().height()
+        radius = self._port_diameter() / 2.0
         if self.editor.top_down_mode:
             if self.node.type == "topic":
                 center_x = 28
-                return QPointF(center_x - 6, 0), QPointF(center_x - 6, 56)
+                return QPointF(center_x - radius, 0), QPointF(center_x - radius, 56)
             center_x = width / 2.0
-            return QPointF(center_x - 6, -6), QPointF(center_x - 6, height - 6)
+            return QPointF(center_x - radius, -radius), QPointF(center_x - radius, height - radius)
         if self.node.type == "topic":
             return QPointF(0, 28), QPointF(40, 28)
         center_y = height / 2.0
-        return QPointF(-6, center_y - 6), QPointF(width - 6, center_y - 6)
+        return QPointF(-radius, center_y - radius), QPointF(width - radius, center_y - radius)
 
     def output_port_name(self, item) -> str:
         return "out"
@@ -258,10 +287,11 @@ class NodeItem(QGraphicsRectItem):
             f"Package: {node.package or 'unknown'}",
         ]
 
-    def _port_color(self) -> QColor:
-        if self.node.type == "topic":
-            return self.editor.accent_color("default")
-        return self.editor.theme_color("text")
+    def _port_diameter(self) -> float:
+        return 12.0 if self.node.type == "topic" else 18.0
+
+    def _filter_port_color(self) -> QColor:
+        return self.editor.theme_color("base")
 
 
 class PipelineView(QGraphicsView):
