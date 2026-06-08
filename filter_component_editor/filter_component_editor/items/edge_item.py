@@ -11,11 +11,21 @@ from filter_component_editor.pipeline_graph import Edge
 
 
 class EdgeItem(QGraphicsLineItem):
-    def __init__(self, edge: Edge, source: "NodeItem", target: "NodeItem", selectable: bool = True) -> None:
+    def __init__(
+        self,
+        edge: Edge,
+        source: "NodeItem",
+        target: "NodeItem",
+        selectable: bool = True,
+        graph_edges: list[Edge] | None = None,
+        collapsed_topic_id: str = "",
+    ) -> None:
         super().__init__()
         self.edge = edge
         self.source = source
         self.target = target
+        self.graph_edges = graph_edges or [edge]
+        self.collapsed_topic_id = collapsed_topic_id
         self.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
         self.setZValue(-1)
         self.setPen(QPen(source.editor.edge_color(edge), 2))

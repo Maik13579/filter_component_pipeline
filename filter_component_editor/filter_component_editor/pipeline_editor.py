@@ -1261,8 +1261,21 @@ class PipelineEditor(Plugin):
         self.scene.addItem(item)
         self.edge_items.append(item)
 
-    def _add_visual_edge_item(self, edge: Edge, source: NodeItem, target: NodeItem) -> None:
-        item = EdgeItem(edge, source, target, selectable=False)
+    def _add_visual_edge_item(
+        self,
+        edge: Edge,
+        source: NodeItem,
+        target: NodeItem,
+        graph_edges: list[Edge],
+        collapsed_topic_id: str,
+    ) -> None:
+        item = EdgeItem(
+            edge,
+            source,
+            target,
+            graph_edges=graph_edges,
+            collapsed_topic_id=collapsed_topic_id,
+        )
         self.scene.addItem(item)
         self.edge_items.append(item)
 
@@ -1285,7 +1298,12 @@ class PipelineEditor(Plugin):
         if not selected_nodes and not selected_edges:
             return
         selected_ids = {item.node.id for item in selected_nodes}
-        selected_edge_ids = {id(item.edge) for item in selected_edges}
+        selected_edge_ids = {id(edge) for item in selected_edges for edge in item.graph_edges}
+        selected_collapsed_topic_ids = {
+            item.collapsed_topic_id
+            for item in selected_edges
+            if item.collapsed_topic_id
+        }
         self.graph.nodes = [node for node in self.graph.nodes if node.id not in selected_ids]
         self.graph.edges = [
             edge
@@ -1294,6 +1312,7 @@ class PipelineEditor(Plugin):
             and edge.source.node not in selected_ids
             and edge.target.node not in selected_ids
         ]
+        self._remove_orphan_collapsed_topic_publishers(selected_collapsed_topic_ids)
         for item in selected_nodes:
             self.scene.removeItem(item)
             self.items_by_id.pop(item.node.id, None)
@@ -1993,4 +2012,21 @@ class PipelineEditor(Plugin):
                         PortRef(outgoing.target.node, outgoing.target.port, "input"),
                         compatibility=compatibility,
                     )
-                    self._add_visual_edge_item(visual_edge, source, target)
+                    self._add_visual_edge_item(visual_edge, source, target, [outgoing], topic_id)
+
+    def _remove_orphan_collapsed_topic_publishers(self, topic_ids: set[str]) -> None:
+        if not topic_ids:
+            return
+        topics_with_subscribers = {
+            edge.source.node
+            for edge in self.graph.edges
+            if edge.source.node in topic_ids
+        }
+        orphan_topic_ids = topic_ids - topics_with_subscribers
+        if not orphan_topic_ids:
+            return
+        self.graph.edges = [
+            edge
+            for edge in self.graph.edges
+            if edge.target.node not in orphan_topic_ids
+        ]

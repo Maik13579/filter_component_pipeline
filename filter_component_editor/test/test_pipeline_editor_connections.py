@@ -229,18 +229,53 @@ def test_hidden_topic_edges_collapse_filter_topic_filter_path() -> None:
         target.id: FakeNodeItem(target),
     }
     rendered = []
-    editor._add_visual_edge_item = lambda edge, source_item, target_item: rendered.append(
-        (edge, source_item.node.id, target_item.node.id)
+    editor._add_visual_edge_item = lambda edge, source_item, target_item, graph_edges, collapsed_topic_id: rendered.append(
+        (edge, source_item.node.id, target_item.node.id, graph_edges, collapsed_topic_id)
     )
     editor._add_edge_item = lambda edge, source_item, target_item: None
 
     editor._rebuild_collapsed_topic_edges()
 
     assert len(rendered) == 1
-    visual_edge, source_id, target_id = rendered[0]
+    visual_edge, source_id, target_id, graph_edges, collapsed_topic_id = rendered[0]
     assert source_id == "source"
     assert target_id == "target"
     assert visual_edge.source.node == "source"
     assert visual_edge.source.port == "cloud"
     assert visual_edge.target.node == "target"
     assert visual_edge.target.port == "cloud"
+    assert graph_edges == [graph.edges[1]]
+    assert collapsed_topic_id == "/between"
+
+
+def test_orphan_collapsed_topic_publisher_is_removed_after_last_subscriber() -> None:
+    source = filter_node("source", output_ports="cloud:PointXYZI")
+    topic_node = topic("/between", "PointXYZI")
+    target = filter_node("target", input_ports="cloud:PointXYZI")
+    publisher = Edge(output("source", "cloud"), input_("/between", "in"))
+    subscriber = Edge(output("/between", "out"), input_("target", "cloud"))
+    graph = Graph(nodes=[source, topic_node, target], edges=[publisher, subscriber])
+    editor = editor_for(graph)
+    editor.graph.edges = [publisher]
+
+    editor._remove_orphan_collapsed_topic_publishers({"/between"})
+
+    assert editor.graph.edges == []
+
+
+def test_collapsed_topic_publisher_stays_while_other_subscribers_remain() -> None:
+    source = filter_node("source", output_ports="cloud:PointXYZI")
+    topic_node = topic("/between", "PointXYZI")
+    target = filter_node("target", input_ports="cloud:PointXYZI")
+    other_target = filter_node("other_target", input_ports="cloud:PointXYZI")
+    publisher = Edge(output("source", "cloud"), input_("/between", "in"))
+    remaining_subscriber = Edge(output("/between", "out"), input_("other_target", "cloud"))
+    graph = Graph(
+        nodes=[source, topic_node, target, other_target],
+        edges=[publisher, remaining_subscriber],
+    )
+    editor = editor_for(graph)
+
+    editor._remove_orphan_collapsed_topic_publishers({"/between"})
+
+    assert editor.graph.edges == [publisher, remaining_subscriber]
