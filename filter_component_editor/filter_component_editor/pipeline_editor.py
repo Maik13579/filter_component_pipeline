@@ -1203,7 +1203,9 @@ class PipelineEditor(Plugin):
                 self._readonly_field(self._port_summary([node.output_ports or node.output_type])),
             )
             tabs.addTab(general, "General")
-            parameters = QWidget(dialog)
+            parameters_scroll = QScrollArea(dialog)
+            parameters_scroll.setWidgetResizable(True)
+            parameters = QWidget(parameters_scroll)
             parameters_form = QFormLayout(parameters)
             if node.parameters:
                 for key in sorted(node.parameters):
@@ -1226,7 +1228,8 @@ class PipelineEditor(Plugin):
                     parameters_form.addRow(label, widget)
             else:
                 parameters_form.addRow(QLabel("No editable parameters.", dialog))
-            tabs.addTab(parameters, "Params")
+            parameters_scroll.setWidget(parameters)
+            tabs.addTab(parameters_scroll, "Params")
             input_qos_widgets = self._add_port_tab(tabs, dialog, node, False)
             output_qos_widgets = self._add_port_tab(tabs, dialog, node, True)
             if self._filter_has_multiple_inputs(node):
@@ -1367,7 +1370,9 @@ class PipelineEditor(Plugin):
         node: Node,
         outgoing: bool,
     ) -> dict[str, dict[str, QLineEdit | QComboBox]]:
-        page = QWidget(dialog)
+        scroll = QScrollArea(dialog)
+        scroll.setWidgetResizable(True)
+        page = QWidget(scroll)
         form = QFormLayout(page)
         configs = node.outputs if outgoing else node.inputs
         widgets: dict[str, dict[str, QLineEdit | QComboBox]] = {}
@@ -1411,7 +1416,8 @@ class PipelineEditor(Plugin):
             port_widgets["durability"] = durability
             form.addRow(f"{port} durability", durability)
             widgets[port] = port_widgets
-        tabs.addTab(page, "Output" if outgoing else "Input")
+        scroll.setWidget(page)
+        tabs.addTab(scroll, "Output" if outgoing else "Input")
         return widgets
 
     def _connected_topic(self, node: Node, port: str, outgoing: bool) -> str:
