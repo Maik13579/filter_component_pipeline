@@ -382,6 +382,41 @@ class PipelineEditor(Plugin):
         for checkbox in widgets.values():
             checkbox.setChecked(checked)
 
+    def _checkbox_matches_query(self, text: str, query: str) -> bool:
+        terms = [term for term in query.strip().lower().split() if term]
+        normalized_text = text.lower()
+        return all(term in normalized_text for term in terms)
+
+    def _add_searchable_checkbox_list(
+        self,
+        dialog: QDialog,
+        layout: QVBoxLayout,
+        widgets: dict[str, QCheckBox],
+    ) -> QVBoxLayout:
+        search = QLineEdit(dialog)
+        search.setPlaceholderText("Search")
+        layout.addWidget(search)
+
+        scroll = QScrollArea(dialog)
+        scroll.setWidgetResizable(True)
+        scroll.setMinimumHeight(320)
+        content = QWidget(scroll)
+        content_layout = QVBoxLayout(content)
+        for checkbox in widgets.values():
+            content_layout.addWidget(checkbox)
+        content_layout.addStretch(1)
+        scroll.setWidget(content)
+        layout.addWidget(scroll, 1)
+
+        def refresh() -> None:
+            query = search.text()
+            for checkbox in widgets.values():
+                checkbox.setVisible(self._checkbox_matches_query(checkbox.text(), query))
+
+        search.textChanged.connect(refresh)
+        refresh()
+        return content_layout
+
     def _edit_type_filter(self) -> None:
         dialog = QDialog(self.widget)
         dialog.setWindowTitle("Type Filter")
@@ -396,13 +431,13 @@ class PipelineEditor(Plugin):
             checkbox = QCheckBox(label, dialog)
             checkbox.setChecked(item.point_type in self.selected_logical_types)
             widgets[item.point_type] = checkbox
-            layout.addWidget(checkbox)
+        self._add_searchable_checkbox_list(dialog, layout, widgets)
         self._add_checkbox_selection_buttons(layout, widgets)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
-        self._set_dialog_default_size(dialog)
+        self._set_dialog_default_size(dialog, height=560)
         if dialog.exec_() == QDialog.Accepted:
             self.selected_logical_types = {
                 point_type for point_type, checkbox in widgets.items() if checkbox.isChecked()
@@ -418,13 +453,13 @@ class PipelineEditor(Plugin):
             checkbox = QCheckBox(package, dialog)
             checkbox.setChecked(package in self.selected_packages)
             widgets[package] = checkbox
-            layout.addWidget(checkbox)
+        self._add_searchable_checkbox_list(dialog, layout, widgets)
         self._add_checkbox_selection_buttons(layout, widgets)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
-        self._set_dialog_default_size(dialog)
+        self._set_dialog_default_size(dialog, height=560)
         if dialog.exec_() == QDialog.Accepted:
             self.selected_packages = {
                 package for package, checkbox in widgets.items() if checkbox.isChecked()

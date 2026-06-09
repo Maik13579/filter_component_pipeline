@@ -344,6 +344,14 @@ def test_connection_verdict_returns_invalid_for_same_node() -> None:
     assert "itself" in verdict.reason
 
 
+def test_checkbox_search_matches_all_terms_case_insensitively() -> None:
+    editor = editor_for(Graph())
+
+    assert editor._checkbox_matches_query("PointXYZI - pcl::PointCloud", "xyzi pcl")
+    assert editor._checkbox_matches_query("grid_map_components", "GRID components")
+    assert not editor._checkbox_matches_query("PointXYZI - pcl::PointCloud", "xyzi grid")
+
+
 def test_connection_verdict_rejects_subscribe_to_published_topic() -> None:
     topic_node = topic("/points", "PointXYZI")
     target = filter_node("voxel")
