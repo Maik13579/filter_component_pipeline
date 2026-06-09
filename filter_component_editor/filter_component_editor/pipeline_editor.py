@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from dataclasses import dataclass
-from html import escape
 import json
 
 from python_qt_binding.QtCore import QPointF, QRectF, QSize, Qt
@@ -370,32 +369,41 @@ class PipelineEditor(Plugin):
 
     def _add_filter_list_item(self, export: FilterExport) -> None:
         item = QListWidgetItem()
-        item.setSizeHint(QSize(240, 54))
-        item.setToolTip(
-            f"{export.package}/{export.filter} [{export.input_type} -> {export.output_type}]"
-        )
+        item.setSizeHint(QSize(240, 72))
         self.filter_list.addItem(item)
 
         row = QWidget()
-        row.setObjectName("filterListRow")
-        row.setStyleSheet("#filterListRow { border-bottom: 1px solid palette(mid); }")
         layout = QVBoxLayout(row)
-        layout.setContentsMargins(6, 4, 6, 5)
+        layout.setContentsMargins(6, 5, 6, 4)
         layout.setSpacing(1)
 
-        title = QLabel(
-            f"<b>{escape(export.filter)}</b> "
-            f"{escape(export.input_type)} -&gt; {escape(export.output_type)}"
-        )
-        title.setTextFormat(Qt.RichText)
+        title = QLabel(export.filter)
+        title_font = title.font()
+        title_font.setBold(True)
+        title.setFont(title_font)
         title.setWordWrap(False)
+
+        types = QLabel(f"{export.input_type} -> {export.output_type}")
+        types.setTextFormat(Qt.PlainText)
+        types.setWordWrap(False)
+
         package = QLabel(export.package)
         package.setTextFormat(Qt.PlainText)
-        package.setStyleSheet("color: palette(mid);")
         package.setWordWrap(False)
 
         layout.addWidget(title)
+        layout.addWidget(types)
         layout.addWidget(package)
+
+        divider = QFrame()
+        divider_color = self.theme_color("text")
+        divider.setFixedHeight(1)
+        divider.setStyleSheet(
+            "border: 0; "
+            f"background-color: rgba({divider_color.red()}, {divider_color.green()}, "
+            f"{divider_color.blue()}, 80);"
+        )
+        layout.addWidget(divider)
         self.filter_list.setItemWidget(item, row)
 
     def _filter_matches_selected_types(self, export: FilterExport) -> bool:
