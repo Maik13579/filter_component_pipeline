@@ -28,6 +28,7 @@ def install_qt_stubs() -> None:
     qt_gui_plugin.Plugin = DummyPlugin
     qt_core.QPointF = object
     qt_core.QRectF = object
+    qt_core.QSize = object
     qt_core.Qt = DummyQt
     for name in ("QColor", "QPen"):
         setattr(qt_gui, name, object)
@@ -47,6 +48,7 @@ def install_qt_stubs() -> None:
         "QLabel",
         "QLineEdit",
         "QListWidget",
+        "QListWidgetItem",
         "QMessageBox",
         "QPushButton",
         "QScrollArea",

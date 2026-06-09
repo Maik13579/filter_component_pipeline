@@ -1,10 +1,11 @@
 # Copyright 2026 Maik Knof
 # SPDX-License-Identifier: Apache-2.0
 
-import json
 from dataclasses import dataclass
+from html import escape
+import json
 
-from python_qt_binding.QtCore import QPointF, QRectF, Qt
+from python_qt_binding.QtCore import QPointF, QRectF, QSize, Qt
 from python_qt_binding.QtGui import QColor, QPen
 from python_qt_binding.QtWidgets import (
     QDialog,
@@ -21,6 +22,7 @@ from python_qt_binding.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidgetItem,
     QListWidget,
     QMessageBox,
     QPushButton,
@@ -364,9 +366,37 @@ class PipelineEditor(Plugin):
         ]
         self.filter_list.clear()
         for export in self.visible_filters:
-            self.filter_list.addItem(
-                f"{export.package}/{export.filter} [{export.input_type} -> {export.output_type}]"
-            )
+            self._add_filter_list_item(export)
+
+    def _add_filter_list_item(self, export: FilterExport) -> None:
+        item = QListWidgetItem()
+        item.setSizeHint(QSize(240, 54))
+        item.setToolTip(
+            f"{export.package}/{export.filter} [{export.input_type} -> {export.output_type}]"
+        )
+        self.filter_list.addItem(item)
+
+        row = QWidget()
+        row.setObjectName("filterListRow")
+        row.setStyleSheet("#filterListRow { border-bottom: 1px solid palette(mid); }")
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(6, 4, 6, 5)
+        layout.setSpacing(1)
+
+        title = QLabel(
+            f"<b>{escape(export.filter)}</b> "
+            f"{escape(export.input_type)} -&gt; {escape(export.output_type)}"
+        )
+        title.setTextFormat(Qt.RichText)
+        title.setWordWrap(False)
+        package = QLabel(export.package)
+        package.setTextFormat(Qt.PlainText)
+        package.setStyleSheet("color: palette(mid);")
+        package.setWordWrap(False)
+
+        layout.addWidget(title)
+        layout.addWidget(package)
+        self.filter_list.setItemWidget(item, row)
 
     def _filter_matches_selected_types(self, export: FilterExport) -> bool:
         if not self.selected_logical_types:
