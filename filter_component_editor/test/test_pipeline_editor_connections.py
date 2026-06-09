@@ -181,6 +181,22 @@ class FakePort:
         return self._parent
 
 
+class FakePortChild:
+    def __init__(self, parent) -> None:
+        self._parent = parent
+
+    def parentItem(self):
+        return self._parent
+
+
+class FakeStatus:
+    def __init__(self) -> None:
+        self.text = ""
+
+    def setText(self, text: str) -> None:
+        self.text = text
+
+
 class FakeToggle:
     def __init__(self) -> None:
         self.checked = None
@@ -639,6 +655,44 @@ def test_create_topic_from_output_port_cancels_pending_drag() -> None:
     assert editor.connection_source is None
     assert editor.connection_source_port == "out"
     assert connections == [("source", "/source_out", "cloud", "in")]
+
+
+def test_create_topic_from_output_port_child_item() -> None:
+    node = filter_node("source", output_ports="cloud:PointXYZI")
+    item = FakeNodeItem(node)
+    topic_item = FakeNodeItem(topic("/source_out", "PointXYZI"))
+    editor = editor_for(Graph(nodes=[node]))
+    editor.items_by_id = {node.id: item, topic_item.node.id: topic_item}
+    editor.connection_source = None
+    editor._resolve_source_port_for_new_topic = lambda _item, _port: "cloud"
+    editor._create_topic_for_port = lambda _item, _outgoing, _port: topic_item
+    connections = []
+    editor._connect_nodes = lambda source, target, source_port, target_port: connections.append(
+        (source.node.id, target.node.id, source_port, target_port)
+    )
+
+    assert editor.create_topic_from_port(FakePortChild(item.output_port)) is True
+
+    assert connections == [("source", "/source_out", "cloud", "in")]
+
+
+def test_release_on_same_output_port_cancels_without_error() -> None:
+    node = filter_node("source", output_ports="cloud:PointXYZI")
+    item = FakeNodeItem(node)
+    editor = editor_for(Graph(nodes=[node]))
+    editor.items_by_id = {node.id: item}
+    editor.connection_source = item
+    editor.connection_source_port = "cloud"
+    editor.status = FakeStatus()
+    editor._clear_connection_preview = lambda: None
+    editor._clear_connection_highlights = lambda: None
+    errors = []
+    editor._show_action_error = lambda title, message: errors.append((title, message))
+
+    assert editor.finish_connection_drag(item.output_port, None) is True
+
+    assert errors == []
+    assert editor.status.text == "Connection canceled."
 
 
 def test_chain_parameter_rewrite_compacts_indices_and_removes_stale_entries() -> None:

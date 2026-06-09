@@ -1303,7 +1303,7 @@ class PipelineEditor(Plugin):
         if node_item.node.type != "filter":
             return False
         self._cancel_connection_drag()
-        if clicked_item == node_item.output_port:
+        if self._item_is_or_contains(clicked_item, node_item.output_port):
             source_port = node_item.output_port_name(clicked_item)
             source_port = self._resolve_source_port_for_new_topic(node_item, source_port)
             if source_port is None:
@@ -1312,7 +1312,7 @@ class PipelineEditor(Plugin):
             topic = self._create_topic_for_port(node_item, True, source_port)
             self._connect_nodes(node_item, topic, source_port, "in")
             return True
-        if clicked_item == node_item.input_port:
+        if self._item_is_or_contains(clicked_item, node_item.input_port):
             target_port = self._resolve_target_port_for_new_topic(node_item, "in")
             if target_port is None:
                 self.status.setText("Topic creation canceled.")
@@ -1325,10 +1325,26 @@ class PipelineEditor(Plugin):
     def _port_owner(self, item) -> NodeItem | None:
         if item is None:
             return None
-        parent = item.parentItem()
-        if not isinstance(parent, NodeItem):
-            return None
-        return parent if item in {parent.input_port, parent.output_port} else None
+        current = item
+        while current is not None:
+            parent = current.parentItem()
+            if (
+                isinstance(parent, NodeItem)
+                and hasattr(parent, "input_port")
+                and hasattr(parent, "output_port")
+                and current in {parent.input_port, parent.output_port}
+            ):
+                return parent
+            current = parent
+        return None
+
+    def _item_is_or_contains(self, item, parent_item) -> bool:
+        current = item
+        while current is not None:
+            if current == parent_item:
+                return True
+            current = current.parentItem()
+        return False
 
     def _node_item_for_graphics_item(self, item) -> NodeItem | None:
         while item is not None:
@@ -1374,7 +1390,11 @@ class PipelineEditor(Plugin):
         if clicked_item is None:
             return False
         port_owner = self._port_owner(clicked_item)
-        if port_owner is not None and port_owner.node.type == "filter" and clicked_item == port_owner.input_port:
+        if (
+            port_owner is not None
+            and port_owner.node.type == "filter"
+            and self._item_is_or_contains(clicked_item, port_owner.input_port)
+        ):
             return False
         node_item = port_owner or (self._node_item_for_graphics_item(clicked_item) if allow_node_body else None)
         if node_item is None:
@@ -1510,7 +1530,7 @@ class PipelineEditor(Plugin):
             self.status.setText("Connection canceled.")
             return True
         if node_item.node.id == source.node.id:
-            self._show_action_error("Connect", "Cannot connect a node to itself.")
+            self.status.setText("Connection canceled.")
             return True
         verdict = self._best_connection_verdict_for_target(source.node, source_port, node_item.node)
         if verdict.verdict not in {"exact", ROS_MESSAGE_COMPATIBILITY}:
