@@ -45,9 +45,12 @@ class Node:
     id: str
     type: str
     name: str = ""
+    implementation: str = "cpp"
     package: str = ""
     filter: str = ""
     component_class: str = ""
+    python_module: str = ""
+    python_class: str = ""
     input_type: str = ""
     output_type: str = ""
     input_ports: str = ""
@@ -72,6 +75,8 @@ class Node:
             "package",
             "filter",
             "component_class",
+            "python_module",
+            "python_class",
             "input_type",
             "output_type",
             "input_ports",
@@ -113,8 +118,20 @@ class Graph:
             nodes_by_id[node.id] = node
             if node.type not in {"filter", "topic"}:
                 raise ValueError(f"unsupported node type {node.type}")
-            if node.type == "filter" and not node.component_class:
+            if (
+                node.type == "filter"
+                and node.implementation == "cpp"
+                and (node.python_module or node.python_class)
+            ):
+                node.implementation = "python"
+            if node.type == "filter" and node.implementation == "cpp" and not node.component_class:
                 raise ValueError(f"filter node {node.id} has no component class")
+            if (
+                node.type == "filter"
+                and node.implementation == "python"
+                and not (node.python_module and node.python_class)
+            ):
+                raise ValueError(f"python filter node {node.id} has no python module or class")
             if node.type == "topic" and not node.topic:
                 raise ValueError(f"topic node {node.id} has no topic")
             if node.type == "topic" and not (node.input_type or node.output_type):
@@ -246,14 +263,22 @@ def graph_from_dict(data: dict[str, Any]) -> Graph:
             for key in ("policy", "queue_size", "slop", "max_interval"):
                 if key in parameters:
                     sync.setdefault(key, parameters.pop(key))
+        python_module = item.get("python_module", "")
+        python_class = item.get("python_class", "")
+        implementation = item.get("implementation", "")
+        if not implementation:
+            implementation = "python" if python_module or python_class else "cpp"
         graph.nodes.append(
             Node(
                 id=node_id,
                 type=node_type,
                 name=item.get("name", ""),
+                implementation=implementation,
                 package=item.get("package", ""),
                 filter=item.get("filter", ""),
                 component_class=item.get("component_class", ""),
+                python_module=python_module,
+                python_class=python_class,
                 input_type=item.get("input_type", ""),
                 output_type=item.get("output_type", ""),
                 input_ports=item.get("input_ports", ""),

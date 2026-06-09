@@ -39,7 +39,7 @@ from filter_component_editor.filter_discovery import FilterExport, FilterPluginE
 from filter_component_editor.items import EdgeHandleItem, EdgeItem, NodeItem
 from filter_component_editor.parameter_discovery import ComponentParameterDiscovery
 from filter_component_editor.pipeline_graph import Edge, Graph, Node, PortRef, load_graph, save_graph
-from filter_component_editor.runtime import LivePipelineRuntime
+from filter_component_editor.runtime import LivePipelineRuntime, LivePythonPipelineRuntime
 from filter_component_editor.views import PipelineView
 
 
@@ -65,7 +65,9 @@ class PipelineEditor(Plugin):
         self.setObjectName("PipelineEditor")
         self.discovery = discover_filters()
         self.live_runtime = LivePipelineRuntime()
+        self.python_live_runtime = LivePythonPipelineRuntime()
         self.parameter_discovery = ComponentParameterDiscovery(self.live_runtime)
+        self.python_parameter_discovery = ComponentParameterDiscovery(self.python_live_runtime)
         self.parameter_descriptions: dict[str, dict[str, str]] = {}
         self.parameter_defaults_by_component: dict[str, dict[str, object]] = {}
         self.graph = Graph()
@@ -183,13 +185,17 @@ class PipelineEditor(Plugin):
         context.add_widget(self.widget)
 
     def shutdown_plugin(self) -> None:
+        self.python_live_runtime.stop()
         self.live_runtime.stop()
 
     def _refresh_live_pipeline(self) -> None:
         try:
             self.live_runtime.stop()
+            self.python_live_runtime.stop()
             self.live_runtime = LivePipelineRuntime()
+            self.python_live_runtime = LivePythonPipelineRuntime()
             self.parameter_discovery = ComponentParameterDiscovery(self.live_runtime)
+            self.python_parameter_discovery = ComponentParameterDiscovery(self.python_live_runtime)
             self.last_live_runtime_error = ""
             self._sync_live_pipeline()
         except Exception as error:
@@ -223,6 +229,8 @@ class PipelineEditor(Plugin):
         highlight = self.theme_color("highlight")
         if node_type == "topic":
             return highlight.lighter(112) if highlight.lightness() < 128 else highlight.darker(112)
+        if node is not None and node.implementation == "python":
+            return QColor("#d7f2e3")
         return base
 
     def selected_node_fill(self, node_type: str, node: Node | None = None) -> QColor:
@@ -493,9 +501,12 @@ class PipelineEditor(Plugin):
                 id=name,
                 type="filter",
                 name=name,
+                implementation=export.implementation,
                 package=export.package,
                 filter=export.filter,
                 component_class=export.component_class,
+                python_module=export.python_module,
+                python_class=export.python_class,
                 input_type=export.input_type,
                 output_type=export.output_type,
                 input_ports=export.input_ports,
@@ -537,34 +548,42 @@ class PipelineEditor(Plugin):
         }
 
     def _component_parameter_metadata(self, export: FilterExport):
-        metadata = self.parameter_discovery.parameters_for_component(export.package, export.component_class)
-        self.parameter_descriptions[export.component_class] = metadata.descriptions
-        self.parameter_defaults_by_component[self._component_cache_key(export.package, export.filter, export.component_class)] = metadata.defaults
+        component_class = self._component_class_for_export(export)
+        discovery = self.python_parameter_discovery if export.implementation == "python" else self.parameter_discovery
+        metadata = discovery.parameters_for_component(export.package, component_class)
+        self.parameter_descriptions[component_class] = metadata.descriptions
+        self.parameter_defaults_by_component[self._component_cache_key(export.package, export.filter, component_class)] = metadata.defaults
         return metadata
 
     def _refresh_filter_parameters_for_dialog(self, node: Node) -> None:
         old_parameters = dict(node.parameters)
-        loaded = self.live_runtime.loaded.get(node.id)
+        runtime = self.python_live_runtime if node.implementation == "python" else self.live_runtime
+        discovery = self.python_parameter_discovery if node.implementation == "python" else self.parameter_discovery
+        loaded = runtime.loaded.get(node.id)
         if loaded is not None:
-            metadata = self.parameter_discovery.parameters_for_loaded_node(
-                self.live_runtime.node,
+            metadata = discovery.parameters_for_loaded_node(
+                runtime.node,
                 loaded.full_node_name,
             )
             if self._is_filter_chain(node) and not self._metadata_has_chain_plugin_params(node, metadata.defaults):
-                metadata = self.parameter_discovery.parameters_for_configured_component(
+                metadata = discovery.parameters_for_configured_component(
                     node.package,
                     self._component_class_for_node(node),
                     old_parameters,
                 )
             node.parameters = metadata.defaults
             self._restore_filter_chain_parameters(node, old_parameters)
-            self.parameter_descriptions[node.component_class] = metadata.descriptions
-            self.parameter_defaults_by_component[self._component_cache_key(node.package, node.filter, node.component_class)] = metadata.defaults
+            component_class = self._component_class_for_node(node)
+            self.parameter_descriptions[component_class] = metadata.descriptions
+            self.parameter_defaults_by_component[self._component_cache_key(node.package, node.filter, component_class)] = metadata.defaults
             return
         export = FilterExport(
             package=node.package,
             filter=node.filter,
             component_class=node.component_class,
+            implementation=node.implementation,
+            python_module=node.python_module,
+            python_class=node.python_class,
             input_type=node.input_type,
             output_type=node.output_type,
             input_ports=node.input_ports,
@@ -597,7 +616,7 @@ class PipelineEditor(Plugin):
         )
 
     def _parameter_description(self, node: Node, parameter_name: str) -> str:
-        return self.parameter_descriptions.get(node.component_class, {}).get(parameter_name, "")
+        return self.parameter_descriptions.get(self._component_class_for_node(node), {}).get(parameter_name, "")
 
     def _filter_export_for_node(self, node: Node) -> FilterExport | None:
         component_class = self._component_class_for_node(node)
@@ -2460,11 +2479,19 @@ class PipelineEditor(Plugin):
     def _sync_live_pipeline(self) -> None:
         try:
             desired = self._live_component_specs()
+            python_desired = self._live_python_component_specs()
             self.graph.validate(message_type_by_logical=self.message_type_by_logical)
             self.live_runtime.sync(desired)
-            self._verify_live_pipeline_loaded(desired)
+            self.python_live_runtime.sync(python_desired)
             if desired:
-                self.status.setText(f"Live pipeline running with {len(desired)} component(s).")
+                self._verify_live_pipeline_loaded(desired)
+            if python_desired:
+                self._verify_python_live_pipeline_loaded(python_desired)
+            total = len(desired) + len(python_desired)
+            if total:
+                self.status.setText(
+                    f"Live pipeline running with {len(desired)} C++ and {len(python_desired)} Python component(s)."
+                )
             self.last_live_runtime_error = ""
         except Exception as error:
             message = str(error)
@@ -2486,10 +2513,20 @@ class PipelineEditor(Plugin):
                 details.append("Extra: " + ", ".join(extra))
             raise RuntimeError("Live container does not match the editor graph. " + "; ".join(details))
 
+    def _verify_python_live_pipeline_loaded(self, desired: dict[str, dict[str, object]]) -> None:
+        actual = {name.strip("/").rsplit("/", 1)[-1] for name in self.python_live_runtime.loaded_components()}
+        actual.discard(self.python_live_runtime.container_name)
+        expected = set(desired)
+        missing = sorted(expected - actual)
+        if missing:
+            details = []
+            details.append("Missing: " + ", ".join(missing))
+            raise RuntimeError("Python live container does not match the editor graph. " + "; ".join(details))
+
     def _live_component_specs(self) -> dict[str, dict[str, object]]:
         specs: dict[str, dict[str, object]] = {}
         for node in self.graph.nodes:
-            if node.type != "filter":
+            if node.type != "filter" or node.implementation == "python":
                 continue
             self._ensure_filter_port_configs(node)
             specs[node.id] = {
@@ -2499,6 +2536,19 @@ class PipelineEditor(Plugin):
             }
             if self._is_filter_chain(node):
                 specs[node.id]["reload_on_parameter_change"] = True
+        return specs
+
+    def _live_python_component_specs(self) -> dict[str, dict[str, object]]:
+        specs: dict[str, dict[str, object]] = {}
+        for node in self.graph.nodes:
+            if node.type != "filter" or node.implementation != "python":
+                continue
+            self._ensure_filter_port_configs(node)
+            specs[node.id] = {
+                "package": node.package,
+                "component_class": self._component_class_for_node(node),
+                "parameters": self._live_parameters_for_node(node),
+            }
         return specs
 
     def _live_parameters_for_node(self, node: Node) -> dict[str, object]:
@@ -2544,13 +2594,17 @@ class PipelineEditor(Plugin):
                 node.sync.setdefault(key, node.parameters.pop(key))
 
     def _declared_filter_parameter_defaults(self, node: Node) -> dict[str, object]:
-        cache_key = self._component_cache_key(node.package, node.filter, node.component_class)
+        component_class = self._component_class_for_node(node)
+        cache_key = self._component_cache_key(node.package, node.filter, component_class)
         if cache_key in self.parameter_defaults_by_component:
             return self.parameter_defaults_by_component[cache_key]
         export = FilterExport(
             package=node.package,
             filter=node.filter,
-            component_class=self._component_class_for_node(node),
+            component_class=component_class,
+            implementation=node.implementation,
+            python_module=node.python_module,
+            python_class=node.python_class,
             input_type=node.input_type,
             output_type=node.output_type,
             input_ports=node.input_ports,
@@ -2562,7 +2616,14 @@ class PipelineEditor(Plugin):
             return dict(node.parameters)
 
     def _component_class_for_node(self, node: Node) -> str:
+        if node.implementation == "python":
+            return f"{node.python_module}:{node.python_class}"
         return node.component_class or f"{node.package}::{node.filter}Component"
+
+    def _component_class_for_export(self, export: FilterExport) -> str:
+        if export.implementation == "python":
+            return f"{export.python_module}:{export.python_class}"
+        return export.component_class
 
     def _component_cache_key(self, package: str, filter_name: str, component_class: str) -> str:
         return component_class or f"{package}::{filter_name}Component"
@@ -2590,18 +2651,21 @@ class PipelineEditor(Plugin):
         for node in self.graph.nodes:
             if node.type != "filter":
                 continue
-            loaded = self.live_runtime.loaded.get(node.id)
+            runtime = self.python_live_runtime if node.implementation == "python" else self.live_runtime
+            discovery = self.python_parameter_discovery if node.implementation == "python" else self.parameter_discovery
+            loaded = runtime.loaded.get(node.id)
             if loaded is None:
                 continue
             old_parameters = dict(node.parameters)
-            metadata = self.parameter_discovery.parameters_for_loaded_node(
-                self.live_runtime.node,
+            metadata = discovery.parameters_for_loaded_node(
+                runtime.node,
                 loaded.full_node_name,
             )
             node.parameters = metadata.defaults
             self._restore_filter_chain_parameters(node, old_parameters)
-            self.parameter_descriptions[node.component_class] = metadata.descriptions
-            self.parameter_defaults_by_component[self._component_cache_key(node.package, node.filter, node.component_class)] = metadata.defaults
+            component_class = self._component_class_for_node(node)
+            self.parameter_descriptions[component_class] = metadata.descriptions
+            self.parameter_defaults_by_component[self._component_cache_key(node.package, node.filter, component_class)] = metadata.defaults
 
     def _save(self) -> None:
         self._sync_positions()

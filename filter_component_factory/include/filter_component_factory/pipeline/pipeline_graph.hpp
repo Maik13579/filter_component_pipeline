@@ -33,9 +33,12 @@ struct PipelineNode
   std::string id;
   std::string type;
   std::string name;
+  std::string implementation;
   std::string package_name;
   std::string filter;
   std::string component_class;
+  std::string python_module;
+  std::string python_class;
   std::string input_type;
   std::string output_type;
   std::string input_ports;

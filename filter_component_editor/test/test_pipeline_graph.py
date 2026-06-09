@@ -562,3 +562,47 @@ def test_graph_rejects_duplicate_topic_nodes() -> None:
 
     with pytest.raises(ValueError):
         graph.validate()
+
+
+def test_graph_accepts_python_filter_identity() -> None:
+    graph = Graph(
+        nodes=[
+            Node(
+                id="PyFilter",
+                name="PyFilter",
+                type="filter",
+                python_module="test_filters.py_filter",
+                python_class="PyFilter",
+                input_ports="cloud:PointCloud2",
+                output_ports="cloud:PointCloud2",
+            )
+        ],
+    )
+
+    graph.validate()
+    data = graph.to_dict()
+
+    assert "implementation" not in data["nodes"][0]
+    assert data["nodes"][0]["python_module"] == "test_filters.py_filter"
+    assert data["nodes"][0]["python_class"] == "PyFilter"
+
+
+def test_graph_infers_python_filter_from_module_and_class() -> None:
+    graph = graph_from_dict(
+        {
+            "version": 2,
+            "nodes": [
+                {
+                    "type": "filter",
+                    "name": "PyFilter",
+                    "python_module": "test_filters.py_filter",
+                    "python_class": "PyFilter",
+                    "input_ports": "cloud:PointCloud2",
+                    "output_ports": "cloud:PointCloud2",
+                }
+            ],
+            "edges": [],
+        }
+    )
+
+    assert graph.nodes[0].implementation == "python"

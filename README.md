@@ -17,6 +17,7 @@ leave, or connect parts of the graph. Topic nodes are not loaded as components.
 
 - [Pipeline Model](#pipeline-model)
 - [Packages](#packages)
+- [Python Support](#python-support)
 - [ROS Filter Chains](#ros-filter-chains)
 - [Architecture](#architecture)
 - [Editor](#editor)
@@ -47,6 +48,12 @@ filters, topic types, and component classes.
   and descriptor helpers for declaring ports, parameters, QoS, and sync.
 - [filter_component_factory](filter_component_factory/README.md): saved graph interpreter
   that loads filter nodes and binds their ports to topics.
+- [filter_component_synchronizer_py](filter_component_synchronizer_py/README.md): Python
+  synchronizer for filters with named input ports.
+- [filter_component_base_py](filter_component_base_py/README.md): Python lifecycle base
+  classes, port helpers, adapters, and Python intra-process transport.
+- [filter_component_factory_py](filter_component_factory_py/README.md): Python runtime
+  factory that loads Python filter nodes from saved graph YAML.
 - [filter_component_editor](filter_component_editor/README.md): rqt graph editor for
   pipeline authoring and validation.
 - [pcl](pcl/README.md): PCL-specific algorithms, type adapters, point-type
@@ -78,6 +85,16 @@ filter_component_synchronizer
       -> filter_component_editor
 ```
 
+Python packages mirror the same structure:
+
+```text
+filter_component_synchronizer_py
+  -> filter_component_base_py
+    -> Python filter packages
+      -> filter_component_factory_py
+      -> filter_component_editor
+```
+
 Component packages export filters with package metadata similar to:
 
 ```xml
@@ -95,6 +112,81 @@ They can also export logical type aliases:
   type_adapter="example_package::ros::ExampleAdapter"
   message_type="example_interfaces/msg/Example"/>
 ```
+
+## Python Support
+
+Python support is intended for fast prototyping while preserving the same graph,
+port, QoS, and lifecycle model as C++ filter components.
+
+Python filters derive from `filter_component_base_py.FilterComponentBasePy`.
+They declare named input and output ports, receive synchronized adapter objects,
+and publish through the same port names used by graph edges. Python support includes a
+`PointCloud2NumpyAdapter` backed by `sensor_msgs_py.point_cloud2`.
+
+Python type adapters mimic the role of C++ `rclcpp` type adapters. Each adapter
+declares a ROS message type, a Python custom type, and `from_ros()` / `to_ros()`
+conversion functions. The Python framework uses the ROS type for normal
+publishers and subscriptions, and uses the custom type inside filter code,
+synchronization, and Python intra-process delivery. The current adapter set provides a
+PointCloud2-to-structured-NumPy adapter.
+
+Python filter nodes are identified in graph YAML by `python_module` and
+`python_class`. No separate `implementation: python` field is required:
+
+```yaml
+- type: filter
+  name: PythonCloudFilter_1
+  python_module: my_filters.cloud_filters
+  python_class: PythonCloudFilter
+  input_ports: cloud:PointCloud2
+  output_ports: cloud:PointCloud2
+```
+
+Run mixed pipelines by starting the C++ factory for C++ components and the
+Python component container for Python components:
+
+```bash
+ros2 run filter_component_factory filter_pipeline_factory \
+  --ros-args -p pipeline_file:=/path/to/pipeline.yaml
+
+ros2 run filter_component_factory_py filter_pipeline_factory_py
+```
+
+The C++ factory loads C++ component nodes and ignores Python nodes. The Python
+runtime starts a component-container-style node for Python filters.
+Python-to-Python edges can use the context-scoped Python intra-process manager
+when topic, adapter type, and QoS match exactly. C++-to-Python and
+Python-to-C++ edges currently use normal ROS topics.
+
+### Python Component Container
+
+The Python runtime deliberately mimics the C++ component container interface. It
+provides the same `composition_interfaces` services:
+`_container/load_node`, `_container/unload_node`, and `_container/list_nodes`.
+The rqt editor uses those services to load and unload Python filters in the
+background the same way it handles C++ components.
+
+For Python filters, `LoadNode.plugin_name` is the Python plugin identity in the
+form `<module>:<class>`, for example
+`my_filters.cloud_filters:PythonCloudFilter`. The loaded lifecycle node appears
+in `ros2 node list`, and the container's `list_nodes` service reports the same
+full node names and unique ids expected by the editor runtime.
+
+The Python intra-process manager is designed to mimic the role of the C++
+`rclcpp` intra-process manager for Python filters. Each Python filter registers
+its ports with the manager for its `rclpy.Context`. The manager connects active
+publishers and subscribers only when the resolved topic, adapter type, and exact
+QoS settings match. Publishers still create normal ROS publishers; the manager
+direct-delivers Python adapter objects to compatible Python subscribers and only
+falls back to ROS publishing when additional ROS subscribers are present.
+
+When direct delivery and ROS publishing both happen, the Python manager records
+pending local ROS echoes and drops those echoes on the matching Python
+subscription callbacks. This prevents Python subscribers from processing the
+same local publication once through the direct path and once through ROS. The
+C++ implementation can do this with publisher GID metadata; Jazzy `rclpy` does
+not expose that GID in public callback metadata, so the Python version uses this
+pending-echo strategy.
 
 ## Editor
 

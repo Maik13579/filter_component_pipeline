@@ -5,6 +5,7 @@ from pathlib import Path
 
 from filter_component_editor.filter_discovery import (
     FilterExport,
+    discover_filters,
     discover_filter_plugins,
     load_filter_plugin_defaults,
     parse_filter_plugin_xml,
@@ -20,6 +21,22 @@ def test_filter_export_defaults_to_normal_filter_kind() -> None:
 
     assert export.kind == "filter"
     assert export.chain_data_type == ""
+    assert export.implementation == "cpp"
+
+
+def test_filter_export_supports_python_filters() -> None:
+    export = FilterExport(
+        package="test_filters",
+        filter="NumpyCloud",
+        component_class="",
+        implementation="python",
+        python_module="test_filters.numpy_cloud",
+        python_class="NumpyCloudFilter",
+    )
+
+    assert export.implementation == "python"
+    assert export.python_module == "test_filters.numpy_cloud"
+    assert export.python_class == "NumpyCloudFilter"
 
 
 def test_parse_filter_plugin_xml_reads_filter_base_plugins(tmp_path: Path) -> None:
@@ -83,3 +100,24 @@ def test_installed_filters_increment_plugin_is_discoverable() -> None:
     assert plugins["filters/MultiChannelIncrementFilterInt"].base_class_type == (
         "filters::MultiChannelFilterBase<int>"
     )
+
+
+def test_python_passthrough_filter_is_discoverable_when_installed() -> None:
+    filters = {item.filter: item for item in discover_filters().filters}
+
+    if "PythonPointCloudPassthrough" not in filters:
+        return
+    export = filters["PythonPointCloudPassthrough"]
+    assert export.implementation == "python"
+    assert export.python_module == "filter_component_python_examples.passthrough_cloud"
+    assert export.python_class == "PythonPointCloudPassthrough"
+
+
+def test_pointcloud2_numpy_type_is_discoverable_when_installed() -> None:
+    types = {item.point_type: item for item in discover_filters().types}
+
+    if "PointCloud2" not in types:
+        return
+    export = types["PointCloud2"]
+    assert export.message_type == "sensor_msgs/msg/PointCloud2"
+    assert export.type_adapter == "filter_component_base_py.adapters.PointCloud2NumpyAdapter"

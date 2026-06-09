@@ -194,7 +194,7 @@ void PipelineFactoryNode::loadPipeline()
   }
 
   for (const auto & node : graph_.nodes) {
-    if (node.type != "filter") {
+    if (node.type != "filter" || node.implementation == "python") {
       continue;
     }
 

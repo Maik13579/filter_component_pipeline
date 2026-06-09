@@ -7,6 +7,8 @@ from dataclasses import dataclass
 import os
 import signal
 import subprocess
+import sys
+import tempfile
 import time
 
 from composition_interfaces.srv import ListNodes
@@ -149,9 +151,12 @@ class LivePipelineRuntime:
 
     def sync(self, desired: dict[str, dict[str, object]]) -> None:
         if not desired:
-            self.start()
-            self._reconcile_loaded_components()
-            self.unload_all()
+            if self.loaded:
+                self.start()
+                self._reconcile_loaded_components()
+                self.unload_all()
+            if self._process is not None or self._attached_existing_process:
+                self.stop()
             return
         self.start()
         self._reconcile_loaded_components()
@@ -380,3 +385,111 @@ class LivePipelineRuntime:
         if future.result() is None:
             raise RuntimeError(f"Timed out during {description}")
         return future.result()
+
+
+class LivePythonPipelineRuntime(LivePipelineRuntime):
+    def __init__(self, node_name: str = "filter_component_editor_python_factory") -> None:
+        super().__init__(node_name)
+        self._stderr_file: str | None = None
+
+    def start(self) -> None:
+        if not rclpy.ok():
+            rclpy.init(args=None)
+        if self._node is None:
+            self._node = rclpy.create_node(f"{self.container_name}_client")
+        if self._process is None or self._process.poll() is not None:
+            if self._service_available(f"/{self.container_name}/_container/load_node", LoadNode):
+                self._process = None
+                self._owns_process = False
+                self._attached_existing_process = True
+                if not self.loaded:
+                    self._adopt_loaded_components()
+                return
+            self.loaded.clear()
+            stderr_handle = tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=".log",
+                prefix="filter_component_editor_python_",
+                delete=False,
+                encoding="utf-8",
+            )
+            self._stderr_file = stderr_handle.name
+            self._process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "filter_component_factory_py.runtime",
+                    "--container-name",
+                    self.container_name,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_handle,
+                start_new_session=True,
+            )
+            self._owns_process = True
+            self._attached_existing_process = False
+            stderr_handle.close()
+        self._wait_for_service(f"/{self.container_name}/_container/load_node", LoadNode)
+
+    def stop(self) -> None:
+        super().stop()
+        if self._stderr_file is not None:
+            try:
+                os.unlink(self._stderr_file)
+            except FileNotFoundError:
+                pass
+            self._stderr_file = None
+
+    def _terminate_attached_container(self) -> None:
+        pattern = f"filter_component_factory_py.runtime.*--container-name {self.container_name}"
+        result = subprocess.run(
+            ["pgrep", "-f", pattern],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        pids = [int(line) for line in result.stdout.splitlines() if line.strip().isdigit()]
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            if not [pid for pid in pids if self._process_exists(pid)]:
+                return
+            time.sleep(0.05)
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    def _wait_for_service(self, service_name: str, service_type) -> None:
+        deadline = time.monotonic() + 8.0
+        client = self._node.create_client(service_type, service_name)
+        while time.monotonic() < deadline:
+            if self._process is not None:
+                return_code = self._process.poll()
+                if return_code is not None:
+                    error = self._read_stderr()
+                    raise RuntimeError(
+                        f"Python component container exited with code {return_code}."
+                        f"{' ' + error if error else ''}"
+                    )
+            if client.wait_for_service(timeout_sec=0.1):
+                return
+        raise RuntimeError(f"Service {service_name} did not become available. {self._read_stderr()}".strip())
+
+    def _read_stderr(self) -> str:
+        if self._stderr_file is None:
+            return ""
+        try:
+            with open(self._stderr_file, encoding="utf-8") as handle:
+                content = handle.read().strip()
+        except OSError:
+            return ""
+        if not content:
+            return ""
+        return f"Log: {content[-2000:]}"

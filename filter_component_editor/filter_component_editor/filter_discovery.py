@@ -15,6 +15,9 @@ class FilterExport:
     package: str
     filter: str
     component_class: str
+    implementation: str = "cpp"
+    python_module: str = ""
+    python_class: str = ""
     input_type: str = ""
     output_type: str = ""
     input_ports: str = ""
@@ -102,6 +105,27 @@ def discover_filters() -> DiscoveryResult:
                         result.filter_plugin_defaults.update(
                             load_filter_plugin_defaults(Path(prefix) / "share" / package / defaults_path)
                         )
+            for item in export.findall("filter_component_py"):
+                filter_name = item.attrib.get("filter", "")
+                module = item.attrib.get("module", "")
+                class_name = item.attrib.get("class", "")
+                if not filter_name or not module or not class_name:
+                    continue
+                result.filters.append(
+                    FilterExport(
+                        package=package,
+                        filter=filter_name,
+                        component_class="",
+                        implementation="python",
+                        python_module=module,
+                        python_class=class_name,
+                        input_type=item.attrib.get("input", ""),
+                        output_type=item.attrib.get("output", ""),
+                        input_ports=item.attrib.get("input_ports", ""),
+                        output_ports=item.attrib.get("output_ports", ""),
+                        kind=item.attrib.get("kind", "filter") or "filter",
+                    )
+                )
 
         for filter_name in package_filters:
             component_class = f"{package}::{filter_name}Component"

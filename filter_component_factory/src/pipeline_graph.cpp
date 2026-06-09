@@ -286,6 +286,13 @@ PipelineGraph loadPipelineGraph(const std::string & path)
     node.package_name = optionalString(item, "package");
     node.filter = optionalString(item, "filter");
     node.component_class = optionalString(item, "component_class");
+    node.python_module = optionalString(item, "python_module");
+    node.python_class = optionalString(item, "python_class");
+    node.implementation = optionalString(item, "implementation");
+    if (node.implementation.empty()) {
+      node.implementation =
+        (!node.python_module.empty() || !node.python_class.empty()) ? "python" : "cpp";
+    }
     node.input_type = optionalString(item, "input_type");
     node.output_type = optionalString(item, "output_type");
     node.input_ports = optionalString(item, "input_ports");
@@ -345,8 +352,18 @@ void validatePipelineGraph(const PipelineGraph & graph)
     if (node.type != "filter" && node.type != "topic") {
       throw std::runtime_error("Unsupported node type '" + node.type + "' on node '" + node.id + "'");
     }
-    if (node.type == "filter" && node.component_class.empty()) {
+    if (node.type == "filter" && node.implementation != "cpp" && node.implementation != "python") {
+      throw std::runtime_error(
+        "Unsupported filter implementation '" + node.implementation + "' on node '" + node.id + "'");
+    }
+    if (node.type == "filter" && node.implementation == "cpp" && node.component_class.empty()) {
       throw std::runtime_error("Filter node '" + node.id + "' has no component class");
+    }
+    if (
+      node.type == "filter" && node.implementation == "python" &&
+      (node.python_module.empty() || node.python_class.empty()))
+    {
+      throw std::runtime_error("Python filter node '" + node.id + "' has no python module or class");
     }
     if (node.type == "topic" && node.topic.empty()) {
       throw std::runtime_error("Topic node '" + node.id + "' must declare a topic");

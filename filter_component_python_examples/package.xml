@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>filter_component_python_examples</name>
+  <version>0.1.0</version>
+  <description>Example Python filters for filter component pipelines.</description>
+  <maintainer email="maik.knof@gmx.de">Maik Knof</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <exec_depend>filter_component_base_py</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <filter_component_py
+      filter="PythonPointCloudPassthrough"
+      module="filter_component_python_examples.passthrough_cloud"
+      class="PythonPointCloudPassthrough"
+      input="PointCloud2"
+      output="PointCloud2"
+      input_ports="cloud:PointCloud2"
+      output_ports="cloud:PointCloud2"/>
+    <filter_component
+      type="PointCloud2"
+      message_type="sensor_msgs/msg/PointCloud2"/>
+  </export>
+</package>

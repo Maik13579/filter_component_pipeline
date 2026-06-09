@@ -273,6 +273,40 @@ edges: []
     std::runtime_error);
 }
 
+TEST(PipelineGraph, AcceptsPythonFilterWithoutComponentClass)
+{
+  const auto path = writeTempPipeline(R"(
+version: 2
+nodes:
+  - type: topic
+    topic: /points
+    input_type: PointCloud2
+    output_type: PointCloud2
+  - type: filter
+    name: PythonFilter_1
+    python_module: test_filters.python_filter
+    python_class: PythonFilter
+    input_ports: cloud:PointCloud2
+    output_ports: cloud:PointCloud2
+  - type: topic
+    topic: /filtered
+    input_type: PointCloud2
+    output_type: PointCloud2
+edges:
+  - from: {node: /points, port: out, direction: output}
+    to: {node: PythonFilter_1, port: cloud, direction: input}
+  - from: {node: PythonFilter_1, port: cloud, direction: output}
+    to: {node: /filtered, port: in, direction: input}
+)");
+
+  const auto graph = filter_component_factory::pipeline::loadPipelineGraph(path);
+
+  ASSERT_EQ(graph.nodes.size(), 3U);
+  EXPECT_EQ(graph.nodes[1].implementation, "python");
+  EXPECT_EQ(graph.nodes[1].python_module, "test_filters.python_filter");
+  EXPECT_EQ(graph.nodes[1].python_class, "PythonFilter");
+}
+
 TEST(PipelineGraph, RejectsFilterSideLegacyPorts)
 {
   const auto path = writeTempPipeline(R"(

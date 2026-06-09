@@ -68,13 +68,25 @@ def install_qt_stubs() -> None:
 
 def install_editor_dependency_stubs() -> None:
     filter_discovery = types.ModuleType("filter_component_editor.filter_discovery")
-    filter_discovery.FilterExport = object
+
+    class FilterExport:
+        def __init__(self, **kwargs):
+            self.package = kwargs.get("package", "")
+            self.filter = kwargs.get("filter", "")
+            self.component_class = kwargs.get("component_class", "")
+            self.implementation = kwargs.get("implementation", "cpp")
+            self.python_module = kwargs.get("python_module", "")
+            self.python_class = kwargs.get("python_class", "")
+            self.input_type = kwargs.get("input_type", "")
+            self.output_type = kwargs.get("output_type", "")
+            self.input_ports = kwargs.get("input_ports", "")
+            self.output_ports = kwargs.get("output_ports", "")
+
+    filter_discovery.FilterExport = FilterExport
     filter_discovery.FilterPluginExport = object
     filter_discovery.discover_filters = lambda: None
     parameter_discovery = types.ModuleType("filter_component_editor.parameter_discovery")
     parameter_discovery.ComponentParameterDiscovery = object
-    runtime = types.ModuleType("filter_component_editor.runtime")
-    runtime.LivePipelineRuntime = object
     views = types.ModuleType("filter_component_editor.views")
     views.PipelineView = object
     items = types.ModuleType("filter_component_editor.items")
@@ -83,7 +95,6 @@ def install_editor_dependency_stubs() -> None:
     items.NodeItem = object
     sys.modules.setdefault("filter_component_editor.filter_discovery", filter_discovery)
     sys.modules.setdefault("filter_component_editor.parameter_discovery", parameter_discovery)
-    sys.modules.setdefault("filter_component_editor.runtime", runtime)
     sys.modules.setdefault("filter_component_editor.views", views)
     sys.modules.setdefault("filter_component_editor.items", items)
 
@@ -106,6 +117,8 @@ def input_(node: str, port: str = "") -> PortRef:
 def editor_for(graph: Graph) -> PipelineEditor:
     editor = object.__new__(PipelineEditor)
     editor.graph = graph
+    editor.parameter_defaults_by_component = {}
+    editor.parameter_descriptions = {}
     editor.message_type_by_logical = {
         "PointXYZ": "sensor_msgs/msg/PointCloud2",
         "PointXYZI": "sensor_msgs/msg/PointCloud2",
@@ -849,3 +862,62 @@ def test_grid_map_filter_chain_live_spec_uses_normal_configure_path() -> None:
 
     assert "configure" not in specs["grid_map_chain"]
     assert specs["grid_map_chain"]["reload_on_parameter_change"] is True
+
+
+def test_python_filter_defaults_use_python_component_discovery() -> None:
+    node = Node(
+        id="PythonPointCloudPassthrough",
+        type="filter",
+        implementation="python",
+        package="filter_component_python_examples",
+        filter="PythonPointCloudPassthrough",
+        python_module="filter_component_python_examples.passthrough_cloud",
+        python_class="PythonPointCloudPassthrough",
+        input_ports="cloud:PointCloud2",
+        output_ports="cloud:PointCloud2",
+    )
+    editor = editor_for(Graph(nodes=[node]))
+    editor.parameter_defaults_by_component = {}
+    editor.parameter_discovery = types.SimpleNamespace(
+        parameters_for_component=lambda *_args: (_ for _ in ()).throw(RuntimeError("should not load C++"))
+    )
+    editor.python_parameter_discovery = types.SimpleNamespace(
+        parameters_for_component=lambda package, component_class: types.SimpleNamespace(
+            defaults={
+                "filter.enabled": True,
+                "filter.frame_id_override": "",
+            },
+            descriptions={},
+            package=package,
+            component_class=component_class,
+        )
+    )
+
+    assert editor._declared_filter_parameter_defaults(node) == {
+        "filter.enabled": True,
+        "filter.frame_id_override": "",
+    }
+
+
+def test_unconnected_python_filter_is_loaded_live_like_cpp_components() -> None:
+    node = Node(
+        id="PythonPointCloudPassthrough",
+        type="filter",
+        implementation="python",
+        package="filter_component_python_examples",
+        filter="PythonPointCloudPassthrough",
+        python_module="filter_component_python_examples.passthrough_cloud",
+        python_class="PythonPointCloudPassthrough",
+        input_ports="cloud:PointCloud2",
+        output_ports="cloud:PointCloud2",
+    )
+    editor = editor_for(Graph(nodes=[node]))
+
+    specs = editor._live_python_component_specs()
+
+    assert set(specs) == {"PythonPointCloudPassthrough"}
+    assert specs["PythonPointCloudPassthrough"]["package"] == "filter_component_python_examples"
+    assert (
+        specs["PythonPointCloudPassthrough"]["component_class"]
+        == "filter_component_python_examples.passthrough_cloud:PythonPointCloudPassthrough"
+    )

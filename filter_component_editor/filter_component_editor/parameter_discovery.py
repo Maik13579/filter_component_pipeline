@@ -131,7 +131,7 @@ class ComponentParameterDiscovery:
         return f"/{node_name.strip('/')}/{service}"
 
     def _probe_node_name(self, component_class: str) -> str:
-        name = component_class.rsplit("::", 1)[-1]
+        name = component_class.rsplit("::", 1)[-1].rsplit(":", 1)[-1]
         name = name.removesuffix("Component")
         name = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
         name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
