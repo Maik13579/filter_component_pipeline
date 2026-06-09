@@ -33,7 +33,7 @@ def test_grid_map_filter_chain_component_is_discoverable_with_metadata() -> None
     assert item.input_type == "GridMap"
     assert item.input_ports == "map:GridMap"
     assert item.output_type == "GridMap"
-    assert item.output_ports == "map:GridMap"
+    assert item.output_ports == "map:GridMap,orig_input:GridMap"
 
 
 def test_grid_map_filter_chain_component_registers_in_rclcpp_components_index() -> None:

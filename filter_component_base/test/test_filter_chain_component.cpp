@@ -53,6 +53,7 @@ struct IntChainTraits
   static const char * dataType() {return "int";}
   static const char * inputPort() {return "value";}
   static const char * outputPort() {return "value";}
+  static const char * originalInputPort() {return "orig_input";}
 };
 
 using IntFilterChainComponent =
@@ -147,14 +148,18 @@ TEST_F(RosContextTest, ConfiguredChainLoadsPluginAndPublishesResult)
     optionsWithOverrides({
       rclcpp::Parameter{"inputs.value.topic", "/increment_chain/input"},
       rclcpp::Parameter{"outputs.value.topic", "/increment_chain/output"},
+      rclcpp::Parameter{"outputs.orig_input.topic", "/increment_chain/orig_input"},
       rclcpp::Parameter{"inputs.value.qos.reliability", "reliable"},
       rclcpp::Parameter{"outputs.value.qos.reliability", "reliable"},
+      rclcpp::Parameter{"outputs.orig_input.qos.reliability", "reliable"},
       rclcpp::Parameter{"filters.filter1.name", "increment"},
       rclcpp::Parameter{"filters.filter1.type", "filters/IncrementFilterInt"},
     }));
   auto io_node = std::make_shared<rclcpp::Node>("increment_chain_io");
   auto received = std::make_shared<int>(0);
+  auto received_original = std::make_shared<int>(0);
   auto has_message = std::make_shared<bool>(false);
+  auto has_original_message = std::make_shared<bool>(false);
 
   auto publisher = io_node->create_publisher<IntAdapter>("/increment_chain/input", rclcpp::QoS{10}.reliable());
   auto subscription = io_node->create_subscription<IntAdapter>(
@@ -164,47 +169,12 @@ TEST_F(RosContextTest, ConfiguredChainLoadsPluginAndPublishesResult)
       *received = *message;
       *has_message = true;
     });
-
-  CallbackReturn callback_return;
-  configureLifecycle(component, callback_return);
-  ASSERT_EQ(callback_return, CallbackReturn::SUCCESS);
-  component->activate(callback_return);
-  ASSERT_EQ(callback_return, CallbackReturn::SUCCESS);
-
-  rclcpp::executors::SingleThreadedExecutor executor;
-  executor.add_node(component->get_node_base_interface());
-  executor.add_node(io_node);
-
-  publisher->publish(std::make_unique<int>(41));
-  spinUntil(executor, has_message);
-
-  ASSERT_TRUE(*has_message);
-  EXPECT_EQ(*received, 42);
-}
-
-TEST_F(RosContextTest, InPlaceChainPublishesResult)
-{
-  auto component = std::make_shared<IntFilterChainComponent>(
-    optionsWithOverrides({
-      rclcpp::Parameter{"inputs.value.topic", "/in_place_chain/input"},
-      rclcpp::Parameter{"outputs.value.topic", "/in_place_chain/output"},
-      rclcpp::Parameter{"inputs.value.qos.reliability", "reliable"},
-      rclcpp::Parameter{"outputs.value.qos.reliability", "reliable"},
-      rclcpp::Parameter{"in_place", true},
-      rclcpp::Parameter{"filters.filter1.name", "increment"},
-      rclcpp::Parameter{"filters.filter1.type", "filters/IncrementFilterInt"},
-    }));
-  auto io_node = std::make_shared<rclcpp::Node>("in_place_chain_io");
-  auto received = std::make_shared<int>(0);
-  auto has_message = std::make_shared<bool>(false);
-
-  auto publisher = io_node->create_publisher<IntAdapter>("/in_place_chain/input", rclcpp::QoS{10}.reliable());
-  auto subscription = io_node->create_subscription<IntAdapter>(
-    "/in_place_chain/output",
+  auto original_subscription = io_node->create_subscription<IntAdapter>(
+    "/increment_chain/orig_input",
     rclcpp::QoS{10}.reliable(),
-    [received, has_message](std::unique_ptr<int> message) {
-      *received = *message;
-      *has_message = true;
+    [received_original, has_original_message](std::unique_ptr<int> message) {
+      *received_original = *message;
+      *has_original_message = true;
     });
 
   CallbackReturn callback_return;
@@ -219,9 +189,12 @@ TEST_F(RosContextTest, InPlaceChainPublishesResult)
 
   publisher->publish(std::make_unique<int>(41));
   spinUntil(executor, has_message);
+  spinUntil(executor, has_original_message);
 
   ASSERT_TRUE(*has_message);
   EXPECT_EQ(*received, 42);
+  ASSERT_TRUE(*has_original_message);
+  EXPECT_EQ(*received_original, 41);
 }
 
 TEST_F(RosContextTest, FailedChainConfigurationReturnsLifecycleFailure)

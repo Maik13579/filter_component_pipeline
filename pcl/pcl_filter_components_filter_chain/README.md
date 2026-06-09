@@ -8,7 +8,7 @@ Each component uses typed `std::unique_ptr` messages at the ROS subscription and
 
 Choose one of the exported `RosFilterChain...` components in the editor or factory, then connect it like any other single-input filter component.
 
-Point cloud chains use a `cloud` input port and a `cloud` output port. `PointIndices` chains use an `indices` input port and an `indices` output port. The ROS boundary still uses the package type adapters, while the filter chain loads plugins compiled for the exact `filters::FilterBase<T>` data type listed by the component.
+Point cloud chains use a `cloud` input port, a filtered `cloud` output port, and an `orig_input` output port with the unchanged input. `PointIndices` chains use `indices` for the input and filtered output, plus `orig_input` for the unchanged input. The ROS boundary still uses the package type adapters, while the filter chain loads plugins compiled for the exact `filters::FilterBase<T>` data type listed by the component.
 
 Example factory node entry:
 
@@ -17,7 +17,7 @@ package: pcl_filter_components_filter_chain
 filter: RosFilterChainXYZI
 component_class: pcl_filter_components_filter_chain::RosFilterChainXYZIComponent
 input_ports: cloud:PointXYZI
-output_ports: cloud:PointXYZI
+output_ports: cloud:PointXYZI,orig_input:PointXYZI
 ```
 
 Example chain parameters:

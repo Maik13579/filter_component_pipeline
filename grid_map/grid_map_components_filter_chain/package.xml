@@ -36,6 +36,6 @@
       input="GridMap"
       input_ports="map:GridMap"
       output="GridMap"
-      output_ports="map:GridMap"/>
+      output_ports="map:GridMap,orig_input:GridMap"/>
   </export>
 </package>

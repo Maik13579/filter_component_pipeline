@@ -167,7 +167,7 @@ def test_filter_chain_components_are_discoverable_with_metadata() -> None:
         assert item.input_type == point_type
         assert item.output_type == point_type
         assert item.input_ports == f"{port}:{point_type}"
-        assert item.output_ports == f"{port}:{point_type}"
+        assert item.output_ports == f"{port}:{point_type},orig_input:{point_type}"
         assert item.kind == "filter_chain"
         assert item.chain_data_type == chain_data_type
 

@@ -29,7 +29,7 @@
       input="PointXYZ"
       input_ports="cloud:PointXYZ"
       output="PointXYZ"
-      output_ports="cloud:PointXYZ"/>
+      output_ports="cloud:PointXYZ,orig_input:PointXYZ"/>
     <filter_component
       filter="RosFilterChainXYZI"
       kind="filter_chain"
@@ -37,7 +37,7 @@
       input="PointXYZI"
       input_ports="cloud:PointXYZI"
       output="PointXYZI"
-      output_ports="cloud:PointXYZI"/>
+      output_ports="cloud:PointXYZI,orig_input:PointXYZI"/>
     <filter_component
       filter="RosFilterChainXYZRGB"
       kind="filter_chain"
@@ -45,7 +45,7 @@
       input="PointXYZRGB"
       input_ports="cloud:PointXYZRGB"
       output="PointXYZRGB"
-      output_ports="cloud:PointXYZRGB"/>
+      output_ports="cloud:PointXYZRGB,orig_input:PointXYZRGB"/>
     <filter_component
       filter="RosFilterChainXYZRGBA"
       kind="filter_chain"
@@ -53,7 +53,7 @@
       input="PointXYZRGBA"
       input_ports="cloud:PointXYZRGBA"
       output="PointXYZRGBA"
-      output_ports="cloud:PointXYZRGBA"/>
+      output_ports="cloud:PointXYZRGBA,orig_input:PointXYZRGBA"/>
     <filter_component
       filter="RosFilterChainPointNormal"
       kind="filter_chain"
@@ -61,7 +61,7 @@
       input="PointNormal"
       input_ports="cloud:PointNormal"
       output="PointNormal"
-      output_ports="cloud:PointNormal"/>
+      output_ports="cloud:PointNormal,orig_input:PointNormal"/>
     <filter_component
       filter="RosFilterChainPointIndices"
       kind="filter_chain"
@@ -69,6 +69,6 @@
       input="PointIndices"
       input_ports="indices:PointIndices"
       output="PointIndices"
-      output_ports="indices:PointIndices"/>
+      output_ports="indices:PointIndices,orig_input:PointIndices"/>
   </export>
 </package>

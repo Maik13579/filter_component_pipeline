@@ -13,7 +13,6 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include "filter_component_base/ros/filter_component_base.hpp"
-#include "filter_component_base/ros/parameter_utils.hpp"
 
 namespace filter_component_base::ros
 {
@@ -31,22 +30,19 @@ public:
       std::array{FilterComponentBase::template inputPort<AdapterT>(
           TraitsT::inputPort(),
           "Input stream processed by the ROS filters chain.")},
-      std::array{FilterComponentBase::template outputPort<AdapterT>(
+      std::array{
+        FilterComponentBase::template outputPort<AdapterT>(
           TraitsT::outputPort(),
-          "Output stream produced by the ROS filters chain.")})
+          "Output stream produced by the ROS filters chain."),
+        FilterComponentBase::template outputPort<AdapterT>(
+          TraitsT::originalInputPort(),
+          "Original input stream before the ROS filters chain.")})
   {
-    declareParameterIfNotDeclared(
-      *this,
-      "in_place",
-      false,
-      makeParameterDescriptor(
-        "Process the filter chain in-place and publish the input message pointer."));
   }
 
 protected:
   void configure() override
   {
-    in_place_ = getParameter<bool>(*this, "in_place");
     filter_chain_ = std::make_unique<filters::FilterChain<MessageT>>(TraitsT::dataType());
     if (!filter_chain_->configure(
         "filters",
@@ -73,18 +69,6 @@ protected:
       return;
     }
 
-    if (in_place_) {
-      if (!filter_chain_ || !filter_chain_->update(*input, *input)) {
-        RCLCPP_WARN(
-          get_logger(),
-          "filters::FilterChain in-place update failed for data type '%s'; dropping message",
-          TraitsT::dataType());
-        return;
-      }
-      publish<AdapterT>(TraitsT::outputPort(), std::move(input));
-      return;
-    }
-
     auto output = std::make_unique<MessageT>();
     if (!filter_chain_ || !filter_chain_->update(*input, *output)) {
       RCLCPP_WARN(
@@ -94,11 +78,11 @@ protected:
       return;
     }
     publish<AdapterT>(TraitsT::outputPort(), std::move(output));
+    publish<AdapterT>(TraitsT::originalInputPort(), std::move(input));
   }
 
 private:
   std::unique_ptr<filters::FilterChain<MessageT>> filter_chain_;
-  bool in_place_{false};
 };
 
 }  // namespace filter_component_base::ros

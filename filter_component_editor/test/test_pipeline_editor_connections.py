@@ -281,7 +281,7 @@ def grid_map_chain_editor_for(graph: Graph) -> PipelineEditor:
         },
     )
     editor.parameter_defaults_by_component = {
-        "grid_map_components_filter_chain::RosFilterChainGridMapComponent": {"in_place": False}
+        "grid_map_components_filter_chain::RosFilterChainGridMapComponent": {}
     }
     return editor
 
@@ -717,13 +717,12 @@ def test_filter_chain_sanitize_preserves_dynamic_plugin_parameters() -> None:
             "filters.filter1.name": "first",
             "filters.filter1.type": "pkg/First",
             "filters.filter1.params.threshold": 2,
-            "in_place": True,
             "filter_component_only": "drop",
         }
     )
     editor = chain_editor_for(Graph(nodes=[node]))
     editor.parameter_defaults_by_component = {
-        "test_filter_components::RosFilterChainXYZIComponent": {"in_place": False}
+        "test_filter_components::RosFilterChainXYZIComponent": {}
     }
 
     editor._sanitize_filter_parameters(node)
@@ -732,20 +731,7 @@ def test_filter_chain_sanitize_preserves_dynamic_plugin_parameters() -> None:
         "filters.filter1.name": "first",
         "filters.filter1.type": "pkg/First",
         "filters.filter1.params.threshold": 2,
-        "in_place": True,
     }
-
-
-def test_filter_chain_sanitize_keeps_in_place_when_discovery_cache_is_empty() -> None:
-    node = chain_node({"in_place": True})
-    editor = chain_editor_for(Graph(nodes=[node]))
-    editor.parameter_defaults_by_component = {
-        "test_filter_components::RosFilterChainXYZIComponent": {}
-    }
-
-    editor._sanitize_filter_parameters(node)
-
-    assert node.parameters == {"in_place": True}
 
 
 def test_filter_chain_live_spec_reloads_on_parameter_change() -> None:
@@ -753,12 +739,11 @@ def test_filter_chain_live_spec_reloads_on_parameter_change() -> None:
         {
             "filters.filter1.name": "first",
             "filters.filter1.type": "pkg/First",
-            "in_place": True,
         }
     )
     editor = chain_editor_for(Graph(nodes=[node]))
     editor.parameter_defaults_by_component = {
-        "test_filter_components::RosFilterChainXYZIComponent": {"in_place": False}
+        "test_filter_components::RosFilterChainXYZIComponent": {}
     }
 
     specs = editor._live_component_specs()
@@ -766,7 +751,6 @@ def test_filter_chain_live_spec_reloads_on_parameter_change() -> None:
     assert specs["chain"]["reload_on_parameter_change"] is True
     assert specs["chain"]["parameters"]["filters.filter1.name"] == "first"
     assert specs["chain"]["parameters"]["filters.filter1.type"] == "pkg/First"
-    assert specs["chain"]["parameters"]["in_place"] is True
 
 
 def test_grid_map_chain_filter_defaults_are_seeded_from_discovery() -> None:

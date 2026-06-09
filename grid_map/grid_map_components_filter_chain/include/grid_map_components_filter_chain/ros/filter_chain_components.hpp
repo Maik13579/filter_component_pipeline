@@ -21,6 +21,7 @@ struct RosFilterChainGridMapTraits
   static const char * dataType() {return "grid_map::GridMap";}
   static const char * inputPort() {return "map";}
   static const char * outputPort() {return "map";}
+  static const char * originalInputPort() {return "orig_input";}
 };
 
 using RosFilterChainGridMapComponent =

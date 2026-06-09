@@ -44,7 +44,6 @@ from filter_component_editor.views import PipelineView
 
 
 FILTER_CHAIN_PARAM_PREFIX = "filters"
-FILTER_CHAIN_BASE_PARAMETER_DEFAULTS = {"in_place": False}
 ROS_MESSAGE_COMPATIBILITY = "ros_message"
 ROS_MESSAGE_COMPATIBILITY_WARNING = (
     "Logical types differ. ROS message type matches, so this connection is allowed, "
@@ -557,7 +556,6 @@ class PipelineEditor(Plugin):
                     self._component_class_for_node(node),
                     old_parameters,
                 )
-            self._add_filter_chain_base_parameters(node, metadata.defaults)
             node.parameters = metadata.defaults
             self._restore_filter_chain_parameters(node, old_parameters)
             self.parameter_descriptions[node.component_class] = metadata.descriptions
@@ -581,7 +579,6 @@ class PipelineEditor(Plugin):
             self.parameter_descriptions[node.component_class] = metadata.descriptions
         else:
             metadata = self._component_parameter_metadata(export)
-        self._add_filter_chain_base_parameters(node, metadata.defaults)
         node.parameters = {
             key: value
             for key, value in node.parameters.items()
@@ -590,12 +587,6 @@ class PipelineEditor(Plugin):
         for key, value in metadata.defaults.items():
             node.parameters.setdefault(key, value)
         self._restore_filter_chain_parameters(node, old_parameters)
-
-    def _add_filter_chain_base_parameters(self, node: Node, defaults: dict[str, object]) -> None:
-        if not self._is_filter_chain(node):
-            return
-        for key, value in FILTER_CHAIN_BASE_PARAMETER_DEFAULTS.items():
-            defaults.setdefault(key, value)
 
     def _metadata_has_chain_plugin_params(self, node: Node, parameters: dict[str, object]) -> bool:
         if not self._chain_entries(node):
@@ -2535,9 +2526,7 @@ class PipelineEditor(Plugin):
     def _declared_filter_parameter_defaults(self, node: Node) -> dict[str, object]:
         cache_key = self._component_cache_key(node.package, node.filter, node.component_class)
         if cache_key in self.parameter_defaults_by_component:
-            defaults = dict(self.parameter_defaults_by_component[cache_key])
-            self._add_filter_chain_base_parameters(node, defaults)
-            return defaults
+            return self.parameter_defaults_by_component[cache_key]
         export = FilterExport(
             package=node.package,
             filter=node.filter,
@@ -2548,9 +2537,7 @@ class PipelineEditor(Plugin):
             output_ports=node.output_ports,
         )
         try:
-            defaults = dict(self._component_parameter_metadata(export).defaults)
-            self._add_filter_chain_base_parameters(node, defaults)
-            return defaults
+            return self._component_parameter_metadata(export).defaults
         except Exception:
             return dict(node.parameters)
 

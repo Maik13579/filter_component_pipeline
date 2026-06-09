@@ -27,6 +27,7 @@ struct RosFilterChainXYZTraits
   static const char * dataType() {return "pcl::PointCloud<pcl::PointXYZ>";}
   static const char * inputPort() {return "cloud";}
   static const char * outputPort() {return "cloud";}
+  static const char * originalInputPort() {return "orig_input";}
 };
 
 struct RosFilterChainXYZITraits
@@ -35,6 +36,7 @@ struct RosFilterChainXYZITraits
   static const char * dataType() {return "pcl::PointCloud<pcl::PointXYZI>";}
   static const char * inputPort() {return "cloud";}
   static const char * outputPort() {return "cloud";}
+  static const char * originalInputPort() {return "orig_input";}
 };
 
 struct RosFilterChainXYZRGBTraits
@@ -43,6 +45,7 @@ struct RosFilterChainXYZRGBTraits
   static const char * dataType() {return "pcl::PointCloud<pcl::PointXYZRGB>";}
   static const char * inputPort() {return "cloud";}
   static const char * outputPort() {return "cloud";}
+  static const char * originalInputPort() {return "orig_input";}
 };
 
 struct RosFilterChainXYZRGBATraits
@@ -51,6 +54,7 @@ struct RosFilterChainXYZRGBATraits
   static const char * dataType() {return "pcl::PointCloud<pcl::PointXYZRGBA>";}
   static const char * inputPort() {return "cloud";}
   static const char * outputPort() {return "cloud";}
+  static const char * originalInputPort() {return "orig_input";}
 };
 
 struct RosFilterChainPointNormalTraits
@@ -59,6 +63,7 @@ struct RosFilterChainPointNormalTraits
   static const char * dataType() {return "pcl::PointCloud<pcl::Normal>";}
   static const char * inputPort() {return "cloud";}
   static const char * outputPort() {return "cloud";}
+  static const char * originalInputPort() {return "orig_input";}
 };
 
 struct RosFilterChainPointIndicesTraits
@@ -67,6 +72,7 @@ struct RosFilterChainPointIndicesTraits
   static const char * dataType() {return "pcl::PointIndices";}
   static const char * inputPort() {return "indices";}
   static const char * outputPort() {return "indices";}
+  static const char * originalInputPort() {return "orig_input";}
 };
 
 using RosFilterChainXYZComponent =
