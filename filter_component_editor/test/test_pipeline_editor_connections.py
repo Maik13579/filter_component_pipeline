@@ -736,6 +736,18 @@ def test_filter_chain_sanitize_preserves_dynamic_plugin_parameters() -> None:
     }
 
 
+def test_filter_chain_sanitize_keeps_in_place_when_discovery_cache_is_empty() -> None:
+    node = chain_node({"in_place": True})
+    editor = chain_editor_for(Graph(nodes=[node]))
+    editor.parameter_defaults_by_component = {
+        "test_filter_components::RosFilterChainXYZIComponent": {}
+    }
+
+    editor._sanitize_filter_parameters(node)
+
+    assert node.parameters == {"in_place": True}
+
+
 def test_filter_chain_live_spec_reloads_on_parameter_change() -> None:
     node = chain_node(
         {
