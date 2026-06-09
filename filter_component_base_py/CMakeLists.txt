@@ -14,6 +14,9 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_point_cloud2_adapter_py test/test_point_cloud2_adapter.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
+  ament_add_pytest_test(test_parameter_utils_py test/test_parameter_utils.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
 endif()
 
 ament_package()

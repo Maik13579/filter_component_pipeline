@@ -7,9 +7,13 @@ from typing import Any
 
 from rclpy.lifecycle import LifecycleNode
 from rclpy.lifecycle import TransitionCallbackReturn
-from rclpy.parameter import Parameter
 
 from filter_component_base_py.intra_process import get_intra_process_manager
+from filter_component_base_py.parameter_utils import declare_parameter_if_not_declared
+from filter_component_base_py.parameter_utils import get_parameter
+from filter_component_base_py.parameter_utils import make_floating_point_range_parameter_descriptor
+from filter_component_base_py.parameter_utils import make_integer_range_parameter_descriptor
+from filter_component_base_py.parameter_utils import make_parameter_descriptor
 from filter_component_base_py.ports import PortDescriptor
 from filter_component_base_py.qos import qos_profile
 from filter_component_synchronizer_py import FilterComponentSynchronizer
@@ -38,9 +42,35 @@ class FilterComponentBasePy(LifecycleNode):
         for port in self.output_ports:
             self._declare_port_parameters("outputs", port)
         if len(self.input_ports) > 1:
-            self.declare_parameter("sync.mode", "receipt_time")
-            self.declare_parameter("sync.queue_size", 10)
-            self.declare_parameter("sync.max_interval", 0.05)
+            declare_parameter_if_not_declared(
+                self,
+                "sync.mode",
+                "receipt_time",
+                make_parameter_descriptor(
+                    "Input synchronization mode.",
+                    "Supported values: receipt_time, latest.",
+                ),
+            )
+            declare_parameter_if_not_declared(
+                self,
+                "sync.queue_size",
+                10,
+                make_integer_range_parameter_descriptor(
+                    "Maximum unmatched input messages kept per port.",
+                    1,
+                    100000,
+                ),
+            )
+            declare_parameter_if_not_declared(
+                self,
+                "sync.max_interval",
+                0.05,
+                make_floating_point_range_parameter_descriptor(
+                    "Maximum receipt-time span across a synchronized input set in seconds.",
+                    0.0,
+                    3600.0,
+                ),
+            )
 
     def configure_filter(self) -> None:
         pass
@@ -107,13 +137,13 @@ class FilterComponentBasePy(LifecycleNode):
         options = SynchronizerOptions()
         if len(self.input_ports) > 1:
             options = SynchronizerOptions(
-                mode=self.get_parameter("sync.mode").value,
-                queue_size=self.get_parameter("sync.queue_size").value,
-                max_interval=self.get_parameter("sync.max_interval").value,
+                mode=get_parameter(self, "sync.mode"),
+                queue_size=get_parameter(self, "sync.queue_size"),
+                max_interval=get_parameter(self, "sync.max_interval"),
             )
         self._synchronizer = FilterComponentSynchronizer(options, self._process_synchronized_inputs)
         for port in self.input_ports:
-            topic = self.get_parameter(self._topic_parameter_name("inputs", port.name)).value
+            topic = get_parameter(self, self._topic_parameter_name("inputs", port.name))
             qos = self._port_qos("inputs", port)
             self._synchronizer.add_input(port.name, port.adapter_type)
             subscription = self.create_subscription(
@@ -132,7 +162,7 @@ class FilterComponentBasePy(LifecycleNode):
                 lambda msg, port=port: self._store_custom_message(port, msg),
             )
         for port in self.output_ports:
-            topic = self.get_parameter(self._topic_parameter_name("outputs", port.name)).value
+            topic = get_parameter(self, self._topic_parameter_name("outputs", port.name))
             qos = self._port_qos("outputs", port)
             publisher = self.create_publisher(port.adapter_type.ros_type, topic, qos)
             self._port_publishers[port.name] = publisher
@@ -182,21 +212,56 @@ class FilterComponentBasePy(LifecycleNode):
         self.process()
 
     def _declare_port_parameters(self, direction: str, port: PortDescriptor) -> None:
-        self.declare_parameter(
+        declare_parameter_if_not_declared(
+            self,
             self._topic_parameter_name(direction, port.name),
             self._default_port_topic(direction, port.name),
+            make_parameter_descriptor(port.description),
         )
-        self.declare_parameter(self._qos_parameter_name(direction, port.name, "reliability"), port.default_reliability)
-        self.declare_parameter(self._qos_parameter_name(direction, port.name, "history"), port.default_history)
-        self.declare_parameter(self._qos_parameter_name(direction, port.name, "depth"), port.default_depth)
-        self.declare_parameter(self._qos_parameter_name(direction, port.name, "durability"), port.default_durability)
+        declare_parameter_if_not_declared(
+            self,
+            self._qos_parameter_name(direction, port.name, "reliability"),
+            port.default_reliability,
+            make_parameter_descriptor(
+                f"QoS reliability for port '{port.name}'.",
+                "Supported values: best_effort, reliable.",
+            ),
+        )
+        declare_parameter_if_not_declared(
+            self,
+            self._qos_parameter_name(direction, port.name, "history"),
+            port.default_history,
+            make_parameter_descriptor(
+                f"QoS history policy for port '{port.name}'.",
+                "Supported values: keep_last, keep_all.",
+            ),
+        )
+        declare_parameter_if_not_declared(
+            self,
+            self._qos_parameter_name(direction, port.name, "depth"),
+            port.default_depth,
+            make_integer_range_parameter_descriptor(
+                f"QoS history depth for port '{port.name}'.",
+                1,
+                100000,
+            ),
+        )
+        declare_parameter_if_not_declared(
+            self,
+            self._qos_parameter_name(direction, port.name, "durability"),
+            port.default_durability,
+            make_parameter_descriptor(
+                f"QoS durability for port '{port.name}'.",
+                "Supported values: volatile, transient_local.",
+            ),
+        )
 
     def _port_qos(self, direction: str, port: PortDescriptor):
         return qos_profile(
-            self.get_parameter(self._qos_parameter_name(direction, port.name, "reliability")).value,
-            self.get_parameter(self._qos_parameter_name(direction, port.name, "history")).value,
-            self.get_parameter(self._qos_parameter_name(direction, port.name, "depth")).value,
-            self.get_parameter(self._qos_parameter_name(direction, port.name, "durability")).value,
+            get_parameter(self, self._qos_parameter_name(direction, port.name, "reliability")),
+            get_parameter(self, self._qos_parameter_name(direction, port.name, "history")),
+            get_parameter(self, self._qos_parameter_name(direction, port.name, "depth")),
+            get_parameter(self, self._qos_parameter_name(direction, port.name, "durability")),
         )
 
     def _input_port(self, port_name: str) -> PortDescriptor:

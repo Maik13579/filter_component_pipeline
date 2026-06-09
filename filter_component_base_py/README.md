@@ -10,6 +10,9 @@ topic, QoS, lifecycle, and graph concepts as the C++ components.
 
 - `FilterComponentBasePy`, based on `rclpy.lifecycle.LifecycleNode`.
 - Input and output `PortDescriptor` helpers.
+- Parameter helpers matching the C++ `parameter_utils.hpp` pattern:
+  `declare_parameter_if_not_declared()`, `get_parameter()`, and descriptor
+  builders for plain, integer-range, and floating-point-range parameters.
 - Per-port topic parameters:
   - `inputs.<port>.topic`
   - `outputs.<port>.topic`

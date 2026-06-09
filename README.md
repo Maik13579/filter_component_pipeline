@@ -17,9 +17,10 @@ leave, or connect parts of the graph. Topic nodes are not loaded as components.
 
 - [Pipeline Model](#pipeline-model)
 - [Packages](#packages)
-- [Python Support](#python-support)
 - [ROS Filter Chains](#ros-filter-chains)
 - [Architecture](#architecture)
+- [Python Support](#python-support)
+  - [Python Component Container](#python-component-container)
 - [Editor](#editor)
 - [Graph YAML](#graph-yaml)
 
