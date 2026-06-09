@@ -229,6 +229,8 @@ class PipelineEditor(Plugin):
         base = self.theme_color("button")
         highlight = self.theme_color("highlight")
         if node_type == "topic":
+            if node is not None and self._topic_qos_error_text(node):
+                return QColor("#c62828")
             return highlight.lighter(112) if highlight.lightness() < 128 else highlight.darker(112)
         if node is not None and node.implementation == "python":
             return self._python_node_fill(selected=False)
@@ -1812,6 +1814,12 @@ class PipelineEditor(Plugin):
             tabs = QTabWidget(dialog)
             general = QWidget(dialog)
             form = QFormLayout(general)
+            qos_error = self._topic_qos_error_text(node)
+            if qos_error:
+                error_label = QLabel(qos_error, dialog)
+                error_label.setWordWrap(True)
+                error_label.setStyleSheet("color: #c62828; font-weight: bold;")
+                form.addRow(error_label)
             topic_edit = QLineEdit(node.topic, dialog)
             form.addRow("Topic", topic_edit)
             logical_type = node.output_type or node.input_type
@@ -1904,6 +1912,84 @@ class PipelineEditor(Plugin):
                 description = self._parameter_description(filter_node, f"inputs.{port}.topic")
             rows.append((self._filter_display_name(filter_node), port, description or "No description."))
         return rows
+
+    def _topic_qos_error_text(self, topic_node: Node) -> str:
+        issues = self._topic_qos_issues(topic_node)
+        if not issues:
+            return ""
+        return "QoS incompatible: " + "; ".join(issues)
+
+    def _topic_qos_issues(self, topic_node: Node) -> list[str]:
+        if topic_node.type != "topic":
+            return []
+        nodes_by_id = {graph_node.id: graph_node for graph_node in self.graph.nodes}
+        publishers: list[tuple[Node, str, dict[str, object]]] = []
+        subscribers: list[tuple[Node, str, dict[str, object]]] = []
+        for edge in self.graph.edges:
+            if edge.target.node == topic_node.id:
+                publisher = nodes_by_id.get(edge.source.node)
+                if publisher is not None and publisher.type == "filter":
+                    port = self._canonical_output_port(publisher, edge.source.port)
+                    publishers.append((publisher, port, self._port_qos(publisher, port, True)))
+            if edge.source.node == topic_node.id:
+                subscriber = nodes_by_id.get(edge.target.node)
+                if subscriber is not None and subscriber.type == "filter":
+                    port = self._canonical_input_port(subscriber, edge.target.port)
+                    subscribers.append((subscriber, port, self._port_qos(subscriber, port, False)))
+
+        issues: list[str] = []
+        seen: set[str] = set()
+        for publisher, publisher_port, publisher_qos in publishers:
+            for subscriber, subscriber_port, subscriber_qos in subscribers:
+                for issue in self._qos_compatibility_issues(
+                    publisher,
+                    publisher_port,
+                    publisher_qos,
+                    subscriber,
+                    subscriber_port,
+                    subscriber_qos,
+                ):
+                    if issue not in seen:
+                        seen.add(issue)
+                        issues.append(issue)
+        return issues
+
+    def _port_qos(self, node: Node, port: str, outgoing: bool) -> dict[str, object]:
+        qos = dict(self._default_qos())
+        configs = node.outputs if outgoing else node.inputs
+        qos.update((configs.get(port, {}) or {}).get("qos", {}) or {})
+        return qos
+
+    def _qos_compatibility_issues(
+        self,
+        publisher: Node,
+        publisher_port: str,
+        publisher_qos: dict[str, object],
+        subscriber: Node,
+        subscriber_port: str,
+        subscriber_qos: dict[str, object],
+    ) -> list[str]:
+        publisher_name = f"{self._filter_display_name(publisher)}:{publisher_port or 'out'}"
+        subscriber_name = f"{self._filter_display_name(subscriber)}:{subscriber_port or 'in'}"
+        issues: list[str] = []
+        publisher_reliability = self._qos_policy_text(publisher_qos, "reliability")
+        subscriber_reliability = self._qos_policy_text(subscriber_qos, "reliability")
+        if publisher_reliability == "best_effort" and subscriber_reliability == "reliable":
+            issues.append(
+                f"{publisher_name} offers best_effort reliability, but "
+                f"{subscriber_name} requests reliable"
+            )
+        publisher_durability = self._qos_policy_text(publisher_qos, "durability")
+        subscriber_durability = self._qos_policy_text(subscriber_qos, "durability")
+        if publisher_durability == "volatile" and subscriber_durability == "transient_local":
+            issues.append(
+                f"{publisher_name} offers volatile durability, but "
+                f"{subscriber_name} requests transient_local"
+            )
+        return issues
+
+    def _qos_policy_text(self, qos: dict[str, object], key: str) -> str:
+        return str(qos.get(key, self._default_qos()[key])).strip().lower()
 
     def _filter_display_name(self, node: Node) -> str:
         name = node.name or node.id
@@ -2732,6 +2818,7 @@ class PipelineEditor(Plugin):
         if not self.show_topics:
             self._rebuild_collapsed_topic_edges()
             self._refresh_port_visibility()
+            self._refresh_topic_qos_indicators()
             return
         for edge in self.graph.edges:
             source = self.items_by_id.get(edge.source.node)
@@ -2739,6 +2826,12 @@ class PipelineEditor(Plugin):
             if source and target:
                 self._add_edge_item(edge, source, target)
         self._refresh_port_visibility()
+        self._refresh_topic_qos_indicators()
+
+    def _refresh_topic_qos_indicators(self) -> None:
+        for item in self.items_by_id.values():
+            if item.node.type == "topic":
+                item.update()
 
     def _rebuild_collapsed_topic_edges(self) -> None:
         nodes_by_id = {node.id: node for node in self.graph.nodes}

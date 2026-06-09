@@ -187,6 +187,9 @@ class FakeNodeItem:
     def output_port_name(self, _item) -> str:
         return "out"
 
+    def update(self) -> None:
+        pass
+
 
 class FakePort:
     def __init__(self, parent) -> None:
@@ -410,6 +413,68 @@ def test_connection_verdict_rejects_publish_to_subscribed_topic() -> None:
 
     assert verdict.verdict == "invalid"
     assert "cannot publish and subscribe" in verdict.reason
+
+
+def test_topic_qos_error_reports_incompatible_reliability() -> None:
+    source = filter_node("source", output_ports="cloud:PointXYZI")
+    topic_node = topic("/points", "PointXYZI")
+    target = filter_node("target", input_ports="cloud:PointXYZI")
+    source.outputs = {"cloud": {"qos": {"reliability": "best_effort"}}}
+    target.inputs = {"cloud": {"qos": {"reliability": "reliable"}}}
+    graph = Graph(
+        nodes=[source, topic_node, target],
+        edges=[
+            Edge(output("source", "cloud"), input_("/points", "in")),
+            Edge(output("/points", "out"), input_("target", "cloud")),
+        ],
+    )
+    editor = editor_for(graph)
+
+    error = editor._topic_qos_error_text(topic_node)
+
+    assert "QoS incompatible" in error
+    assert "best_effort reliability" in error
+    assert "requests reliable" in error
+
+
+def test_topic_qos_error_reports_incompatible_durability() -> None:
+    source = filter_node("source", output_ports="cloud:PointXYZI")
+    topic_node = topic("/points", "PointXYZI")
+    target = filter_node("target", input_ports="cloud:PointXYZI")
+    source.outputs = {"cloud": {"qos": {"durability": "volatile"}}}
+    target.inputs = {"cloud": {"qos": {"durability": "transient_local"}}}
+    graph = Graph(
+        nodes=[source, topic_node, target],
+        edges=[
+            Edge(output("source", "cloud"), input_("/points", "in")),
+            Edge(output("/points", "out"), input_("target", "cloud")),
+        ],
+    )
+    editor = editor_for(graph)
+
+    error = editor._topic_qos_error_text(topic_node)
+
+    assert "QoS incompatible" in error
+    assert "volatile durability" in error
+    assert "requests transient_local" in error
+
+
+def test_topic_qos_error_allows_reliable_publisher_for_best_effort_subscriber() -> None:
+    source = filter_node("source", output_ports="cloud:PointXYZI")
+    topic_node = topic("/points", "PointXYZI")
+    target = filter_node("target", input_ports="cloud:PointXYZI")
+    source.outputs = {"cloud": {"qos": {"reliability": "reliable"}}}
+    target.inputs = {"cloud": {"qos": {"reliability": "best_effort"}}}
+    graph = Graph(
+        nodes=[source, topic_node, target],
+        edges=[
+            Edge(output("source", "cloud"), input_("/points", "in")),
+            Edge(output("/points", "out"), input_("target", "cloud")),
+        ],
+    )
+    editor = editor_for(graph)
+
+    assert editor._topic_qos_error_text(topic_node) == ""
 
 
 def test_refresh_topic_visibility_hides_only_topic_items() -> None:
