@@ -61,10 +61,9 @@ shm_key.<key_name>
 ```
 
 The default remap value is the key name itself. During each lifecycle configure,
-the base creates a fresh `ShmView`, reads all `shm_key.*` values, and installs
-those remaps into the view. Cleanup followed by configure therefore recreates
-the view for the current parameter values. Saved graph YAML can bind a local key
-such as `global_map` to an effective process-wide key such as `slam/global_map`.
+the base reads all `shm_key.*` values and installs those remaps into the view.
+Saved graph YAML can bind a local key such as `global_map` to an effective
+process-wide key such as `slam/global_map`.
 
 Filter authors should use the checked helper API instead of accessing the
 registry directly:
@@ -167,6 +166,22 @@ parameters automatically when the input descriptor array has more than one
 entry. For multiple outputs, declare each output with the adapter type that
 matches the message it publishes, such as a cloud adapter for `cloud` and a
 point-indices adapter for `indices`.
+
+## Inspecting Component Metadata
+
+The package installs an inspector tool that loads exported C++ filter components,
+constructs each lifecycle node without configuring or activating it, and prints
+JSON metadata read from `FilterComponentBase`:
+
+```bash
+ros2 run filter_component_base inspect_filter_components --packages-select my_filters
+ros2 run filter_component_base inspect_filter_components my_filters
+ros2 run filter_component_base inspect_filter_components --all
+```
+
+Use `-h` or `--help` for the full CLI. The tool reads package XML only to find
+which filters a package exports; port descriptors, shared-memory key descriptors,
+and parameter descriptors come from the component instance itself.
 
 ## Wrapping ROS Filter Chains
 

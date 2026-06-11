@@ -92,6 +92,7 @@ public:
   {
     std::string name;
     std::string description;
+    std::string type_name;
     std::string default_reliability{"best_effort"};
     std::string default_history{"keep_last"};
     int default_depth{5};
@@ -112,11 +113,13 @@ public:
   template <typename AdapterT>
   static PortDescriptor inputPort(
     const std::string & name,
-    const std::string & description)
+    const std::string & description,
+    const std::string & type_name = typeid(AdapterT).name())
   {
     return {
       name,
       description,
+      type_name,
       "best_effort",
       "keep_last",
       5,
@@ -141,11 +144,13 @@ public:
   template <typename AdapterT>
   static PortDescriptor outputPort(
     const std::string & name,
-    const std::string & description)
+    const std::string & description,
+    const std::string & type_name = typeid(AdapterT).name())
   {
     return {
       name,
       description,
+      type_name,
       "best_effort",
       "keep_last",
       5,
@@ -234,6 +239,21 @@ public:
           0.0,
           3600.0));
     }
+  }
+
+  const std::vector<PortDescriptor> & inputPortDescriptors() const
+  {
+    return input_ports_;
+  }
+
+  const std::vector<PortDescriptor> & outputPortDescriptors() const
+  {
+    return output_ports_;
+  }
+
+  const std::vector<ShmKeyDescriptor> & shmKeyDescriptors() const
+  {
+    return shm_keys_;
   }
 
 protected:
