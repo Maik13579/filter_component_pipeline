@@ -36,10 +36,6 @@ class FilterComponentBase : public rclcpp_lifecycle::LifecycleNode
 public:
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
-  using PortDescriptor = filter_component_base::ros::PortDescriptor;
-  using PublisherConcept = filter_component_base::ros::PublisherConcept;
-  using ShmAccess = filter_component_base::ros::ShmAccess;
-  using ShmKeyDescriptor = filter_component_base::ros::ShmKeyDescriptor;
 
   /// @brief Declare a parameter with a default value and description.
   template <typename T>

@@ -18,6 +18,8 @@ namespace
 {
 
 using filter_component_base::ros::FilterComponentBase;
+using filter_component_base::ros::PortDescriptor;
+using filter_component_base::ros::ShmAccess;
 
 rclcpp::NodeOptions optionsWithOverrides(std::vector<rclcpp::Parameter> overrides = {})
 {

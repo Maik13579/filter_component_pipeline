@@ -15,6 +15,8 @@
 namespace pcl_filter_components::ros
 {
 
+using filter_component_base::ros::PortDescriptor;
+
 namespace detail
 {
 
@@ -37,7 +39,6 @@ class PointCloudMergerComponent
 {
 public:
   using Base = filter_component_base::ros::FilterComponentBase;
-  using PortDescriptor = typename Base::PortDescriptor;
   using StampedCloud = pcl::PointCloud<PointT>;
   using CloudAdapter = pcl_filter_components_type_adapters::ros::PclCloudAdapter<PointT>;
 

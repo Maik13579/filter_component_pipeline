@@ -16,13 +16,14 @@
 namespace pcl_filter_components::ros::common
 {
 
+using filter_component_base::ros::PortDescriptor;
+
 template <typename PointT, typename FilterT>
 class BinaryCloudFilterComponent : public FilterComponentBase
 {
  public:
   using Base = FilterComponentBase;
   using CloudAdapter = pcl_filter_components_type_adapters::ros::PclCloudAdapter<PointT>;
-  using PortDescriptor = typename Base::PortDescriptor;
   using StampedCloud = pcl::PointCloud<PointT>;
 
   explicit BinaryCloudFilterComponent(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())

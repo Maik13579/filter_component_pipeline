@@ -18,6 +18,7 @@ namespace pcl_filter_components::ros::common
 {
 
 using filter_component_base::ros::FilterComponentBase;
+using filter_component_base::ros::PortDescriptor;
 
 namespace detail
 {
@@ -303,7 +304,6 @@ class SingleCloudFilterComponent : public FilterComponentBase
 public:
   using Base = FilterComponentBase;
   using CloudAdapter = pcl_filter_components_type_adapters::ros::PclCloudAdapter<PointT>;
-  using PortDescriptor = typename Base::PortDescriptor;
   using StampedCloud = pcl::PointCloud<PointT>;
 
   explicit SingleCloudFilterComponent(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())

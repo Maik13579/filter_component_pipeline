@@ -32,6 +32,9 @@ namespace
 {
 
 using FilterComponentBase = filter_component_base::ros::FilterComponentBase;
+using filter_component_base::ros::PortDescriptor;
+using filter_component_base::ros::ShmAccess;
+using filter_component_base::ros::ShmKeyDescriptor;
 using ComponentResource = std::pair<std::string, std::string>;
 
 struct CliOptions
@@ -329,12 +332,12 @@ std::string displayTypeName(const std::string & name)
   return name.empty() ? name : demangle(name);
 }
 
-std::string accessToString(FilterComponentBase::ShmAccess access)
+std::string accessToString(ShmAccess access)
 {
-  return access == FilterComponentBase::ShmAccess::ReadWrite ? "rw" : "r";
+  return access == ShmAccess::ReadWrite ? "rw" : "r";
 }
 
-std::string joinPortString(const std::vector<FilterComponentBase::PortDescriptor> & ports)
+std::string joinPortString(const std::vector<PortDescriptor> & ports)
 {
   std::ostringstream out;
   for (size_t index = 0; index < ports.size(); ++index) {
@@ -346,7 +349,7 @@ std::string joinPortString(const std::vector<FilterComponentBase::PortDescriptor
   return out.str();
 }
 
-std::string joinTypeString(const std::vector<FilterComponentBase::PortDescriptor> & ports)
+std::string joinTypeString(const std::vector<PortDescriptor> & ports)
 {
   std::ostringstream out;
   for (size_t index = 0; index < ports.size(); ++index) {
@@ -388,7 +391,7 @@ public:
   void portArray(
     std::ostream & out,
     const std::string & key,
-    const std::vector<FilterComponentBase::PortDescriptor> & ports,
+    const std::vector<PortDescriptor> & ports,
     bool comma,
     size_t level) const
   {
@@ -414,7 +417,7 @@ public:
 
   void shmArray(
     std::ostream & out,
-    const std::vector<FilterComponentBase::ShmKeyDescriptor> & keys,
+    const std::vector<ShmKeyDescriptor> & keys,
     bool comma,
     size_t level) const
   {

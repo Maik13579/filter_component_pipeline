@@ -36,9 +36,8 @@ publish<CloudAdapter>("cloud", filtered_cloud);
 The port name in code is the same port name that appears in editor edges and
 saved YAML.
 
-`FilterComponentBase` keeps compatibility aliases such as
-`FilterComponentBase::PortDescriptor`, but code that only needs the descriptor
-types can include `filter_component_base/ros/component_descriptors.hpp`.
+Code that only needs descriptor types can include
+`filter_component_base/ros/component_descriptors.hpp`.
 
 ## Synchronization
 
@@ -112,8 +111,9 @@ public:
   using Base = filter_component_base::ros::FilterComponentBase;
   using CloudAdapter = custom_components::ros::CloudAdapter<PointT>;
   using StampedCloud = custom_components::Cloud<PointT>;
-  using PortDescriptor = typename Base::PortDescriptor;
-  using ShmKeyDescriptor = typename Base::ShmKeyDescriptor;
+  using filter_component_base::ros::PortDescriptor;
+  using filter_component_base::ros::ShmAccess;
+  using filter_component_base::ros::ShmKeyDescriptor;
 
   explicit MyComponent(const rclcpp::NodeOptions & options)
   : Base("my_filter", options, inputPorts(), outputPorts(), shmKeys())
@@ -149,7 +149,7 @@ protected:
       Base::template shmKey<MyMap>(
         "global_map",
         "Shared map used by this filter.",
-        Base::ShmAccess::ReadWrite,
+        ShmAccess::ReadWrite,
         "my_pkg::MyMap"),
     }};
   }
