@@ -1056,6 +1056,54 @@ def test_shm_inventory_groups_by_effective_key_and_detects_type_conflicts() -> N
     assert entries[0]["key"] == "shared/map"
     assert entries[0]["conflict"] is True
     assert entries[0]["node_ids"] == ["Reader", "Writer"]
+    assert "filters" not in entries[0]
+
+
+def test_shm_inventory_tree_splits_dotted_effective_keys() -> None:
+    counter = filter_node("Counter")
+    counter.shm_keys = "counter:int:rw"
+    counter.shm = {"remappings": {"counter": "debug.counter"}}
+    label = filter_node("Label")
+    label.shm_keys = "label:std::string:r"
+    label.shm = {"remappings": {"label": "debug.label"}}
+    editor = editor_for(Graph(nodes=[counter, label]))
+
+    tree = editor._shm_inventory_tree()
+
+    assert tree == [
+        {
+            "key": "debug",
+            "type_name": "",
+            "node_ids": ["Counter", "Label"],
+            "conflict": False,
+            "children": [
+                {
+                    "key": "counter",
+                    "type_name": "int",
+                    "node_ids": ["Counter"],
+                    "conflict": False,
+                    "children": [],
+                },
+                {
+                    "key": "label",
+                    "type_name": "std::string",
+                    "node_ids": ["Label"],
+                    "conflict": False,
+                    "children": [],
+                },
+            ],
+        }
+    ]
+
+
+def test_shm_key_description_comes_from_generated_parameter_description() -> None:
+    node = filter_node("ShmFilter")
+    editor = editor_for(Graph(nodes=[node]))
+    editor.parameter_descriptions[node.component_class] = {
+        "shm_key.debug.counter": "Shared counter remap target."
+    }
+
+    assert editor._shm_key_description(node, "debug.counter") == "Shared counter remap target."
 
 
 def test_default_shm_config_uses_key_names_as_remaps() -> None:

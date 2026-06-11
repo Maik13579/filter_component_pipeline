@@ -170,8 +170,8 @@ class PipelineEditor(Plugin):
         inventory_layout = QVBoxLayout(inventory_widget)
         inventory_layout.addWidget(QLabel("Shared Memory Keys"))
         self.shm_inventory = QTreeWidget()
-        self.shm_inventory.setColumnCount(3)
-        self.shm_inventory.setHeaderLabels(["Key", "Type", "Filters"])
+        self.shm_inventory.setColumnCount(2)
+        self.shm_inventory.setHeaderLabels(["Key", "Type"])
         inventory_layout.addWidget(self.shm_inventory, 1)
         self.shm_inventory.itemClicked.connect(self._select_shm_inventory_item)
         splitter.addWidget(side_widget)
@@ -2106,11 +2106,13 @@ class PipelineEditor(Plugin):
         form = QFormLayout(page)
         remappings = self._shm_remappings(node)
         for key in shm_keys:
+            description = self._shm_key_description(node, key.name)
             field = QLineEdit(str(remappings.get(key.name, key.name)), dialog)
-            field.setToolTip(f"{key.name} [{key.type_name}, {key.access}]")
+            field.setToolTip(description or f"{key.name} [{key.type_name}, {key.access}]")
             form.addRow("Key", self._readonly_field(key.name))
             form.addRow("Type", self._readonly_field(key.type_name))
             form.addRow("Access", self._readonly_field("Read/write" if key.access == "rw" else "Read-only"))
+            form.addRow("Description", self._readonly_field(description or "No description."))
             form.addRow("Remap", field)
             widgets[key.name] = field
             line = QFrame(dialog)
@@ -2130,6 +2132,9 @@ class PipelineEditor(Plugin):
                 for key, widget in widgets.items()
             }
         }
+
+    def _shm_key_description(self, node: Node, key_name: str) -> str:
+        return self._parameter_description(node, f"shm_key.{key_name}")
 
     def _populate_parameter_tree(
         self,
@@ -2607,7 +2612,6 @@ class PipelineEditor(Plugin):
                 {
                     "key": entry["key"],
                     "type_name": ", ".join(types),
-                    "filters": ", ".join(sorted(user["node_id"] for user in users)),
                     "node_ids": sorted({user["node_id"] for user in users}),
                     "conflict": len(types) > 1,
                     "users": users,
@@ -2615,24 +2619,70 @@ class PipelineEditor(Plugin):
             )
         return sorted(entries, key=lambda item: str(item["key"]))
 
+    def _shm_inventory_tree(self) -> list[dict[str, object]]:
+        roots: dict[str, dict[str, object]] = {}
+
+        def make_group(name: str) -> dict[str, object]:
+            return {
+                "key": name,
+                "type_name": "",
+                "node_ids": set(),
+                "conflict": False,
+                "children": {},
+            }
+
+        for entry in self._shm_inventory_entries():
+            full_key = str(entry["key"])
+            parts = [part for part in full_key.split(".") if part] or [full_key]
+            children = roots
+            current = None
+            for index, part in enumerate(parts):
+                current = children.setdefault(part, make_group(part))
+                current["node_ids"].update(entry["node_ids"])
+                current["conflict"] = bool(current["conflict"] or entry["conflict"])
+                if index == len(parts) - 1:
+                    current["type_name"] = entry["type_name"]
+                    current["full_key"] = entry["key"]
+                children = current["children"]
+
+        def freeze(node: dict[str, object]) -> dict[str, object]:
+            children = [
+                freeze(child)
+                for child in sorted(node["children"].values(), key=lambda child: str(child["key"]))
+            ]
+            return {
+                "key": node["key"],
+                "type_name": node["type_name"] if not children else "",
+                "node_ids": sorted(node["node_ids"]),
+                "conflict": node["conflict"],
+                "children": children,
+            }
+
+        return [freeze(root) for root in sorted(roots.values(), key=lambda node: str(node["key"]))]
+
     def _refresh_shm_inventory(self) -> None:
         inventory = getattr(self, "shm_inventory", None)
         if inventory is None:
             return
         inventory.clear()
-        for entry in self._shm_inventory_entries():
-            item = QTreeWidgetItem([
-                str(entry["key"]),
-                str(entry["type_name"]),
-                str(entry["filters"]),
-            ])
+
+        def add_item(entry: dict[str, object], parent=None) -> None:
+            item = QTreeWidgetItem([str(entry["key"]), str(entry["type_name"])])
             item.setData(0, Qt.UserRole, entry["node_ids"])
             if entry["conflict"]:
                 item.setForeground(0, QColor("#c62828"))
                 item.setForeground(1, QColor("#c62828"))
-                item.setForeground(2, QColor("#c62828"))
-            inventory.addTopLevelItem(item)
-        for index in range(3):
+            if parent is None:
+                inventory.addTopLevelItem(item)
+            else:
+                parent.addChild(item)
+            for child in entry["children"]:
+                add_item(child, item)
+
+        for entry in self._shm_inventory_tree():
+            add_item(entry)
+        inventory.expandAll()
+        for index in range(2):
             inventory.resizeColumnToContents(index)
 
     def _select_shm_inventory_item(self, item, _column: int) -> None:
