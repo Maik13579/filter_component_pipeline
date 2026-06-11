@@ -10,7 +10,6 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <typeindex>
 #include <typeinfo>
 #include <type_traits>
 #include <unordered_map>
@@ -26,6 +25,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 
+#include "filter_component_base/ros/component_descriptors.hpp"
 #include "filter_component_synchronizer/filter_component_synchronizer.hpp"
 
 namespace filter_component_base::ros
@@ -36,7 +36,12 @@ class FilterComponentBase : public rclcpp_lifecycle::LifecycleNode
 public:
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+  using PortDescriptor = filter_component_base::ros::PortDescriptor;
+  using PublisherConcept = filter_component_base::ros::PublisherConcept;
+  using ShmAccess = filter_component_base::ros::ShmAccess;
+  using ShmKeyDescriptor = filter_component_base::ros::ShmKeyDescriptor;
 
+  /// @brief Declare a parameter with a default value and description.
   template <typename T>
   void declareParameter(
     const std::string & name,
@@ -46,27 +51,14 @@ public:
     this->declare_parameter<T>(name, default_value, makeParameterDescriptor(description));
   }
 
+  /// @brief Read a declared parameter as a typed value.
   template <typename T>
   T getParameter(const std::string & name) const
   {
     return this->get_parameter(name).get_value<T>();
   }
 
-  enum class ShmAccess
-  {
-    ReadOnly,
-    ReadWrite,
-  };
-
-  struct ShmKeyDescriptor
-  {
-    std::string name;
-    std::string description;
-    std::string type_name;
-    std::type_index type_index;
-    ShmAccess access{ShmAccess::ReadOnly};
-  };
-
+  /// @brief Create a shared-memory key descriptor.
   template<typename T>
   static ShmKeyDescriptor shmKey(
     const std::string & name,
@@ -83,51 +75,7 @@ public:
       access};
   }
 
-  struct PublisherConcept
-  {
-    explicit PublisherConcept(std::type_index adapter_type_in)
-    : adapter_type(adapter_type_in)
-    {
-    }
-
-    virtual ~PublisherConcept() = default;
-    std::type_index adapter_type;
-  };
-
-  template <typename AdapterT>
-  struct PublisherHolder : PublisherConcept
-  {
-    explicit PublisherHolder(std::shared_ptr<rclcpp::Publisher<AdapterT>> publisher_in)
-    : PublisherConcept(std::type_index(typeid(AdapterT))),
-      publisher(std::move(publisher_in))
-    {
-    }
-
-    std::shared_ptr<rclcpp::Publisher<AdapterT>> publisher;
-  };
-
-  struct PortDescriptor
-  {
-    std::string name;
-    std::string description;
-    std::string type_name;
-    std::string default_reliability{"best_effort"};
-    std::string default_history{"keep_last"};
-    int default_depth{5};
-    std::string default_durability{"volatile"};
-    std::type_index adapter_type;
-    std::function<std::unique_ptr<PublisherConcept>(
-        FilterComponentBase &,
-        const std::string &,
-        const rclcpp::QoS &)> create_publisher;
-    std::function<void(
-        filter_component_synchronizer::FilterComponentSynchronizer &,
-        FilterComponentBase &,
-        const std::string &,
-        const std::string &,
-        const rclcpp::QoS &)> create_subscription;
-  };
-
+  /// @brief Create an input topic port descriptor.
   template <typename AdapterT>
   static PortDescriptor inputPort(
     const std::string & name,
@@ -159,6 +107,7 @@ public:
       }};
   }
 
+  /// @brief Create an output topic port descriptor.
   template <typename AdapterT>
   static PortDescriptor outputPort(
     const std::string & name,
@@ -179,7 +128,7 @@ public:
         const std::string & topic_name,
         const rclcpp::QoS & qos)
       {
-        return std::make_unique<PublisherHolder<AdapterT>>(
+        return std::make_unique<filter_component_base::ros::PublisherHolder<AdapterT>>(
           node.template createAdaptedPublisher<AdapterT>(topic_name, qos));
       },
       {}};
@@ -388,7 +337,7 @@ protected:
   template <typename AdapterT>
   std::shared_ptr<rclcpp::Publisher<AdapterT>> createAdaptedPublisher(
     const std::string & topic_name,
-    const rclcpp::QoS & qos)
+      const rclcpp::QoS & qos)
   {
     return rclcpp::create_publisher<AdapterT>(*this, topic_name, qos);
   }
@@ -474,7 +423,8 @@ protected:
     if (iter->second->adapter_type != std::type_index(typeid(AdapterT))) {
       throw std::invalid_argument("Output port '" + port_name + "' has a different adapter type");
     }
-    static_cast<PublisherHolder<AdapterT> *>(iter->second.get())->publisher->publish(std::move(message));
+    static_cast<filter_component_base::ros::PublisherHolder<AdapterT> *>(
+      iter->second.get())->publisher->publish(std::move(message));
   }
 
   void processSynchronizedInputs()
