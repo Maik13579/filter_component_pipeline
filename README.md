@@ -46,8 +46,9 @@ filters, topic types, and component classes.
 
 - [filter_component_synchronizer](filter_component_synchronizer/README.md): header-only
   unique-pointer synchronizer for filters with named input ports.
-- [filter_component_base](filter_component_base/README.md): lifecycle component base classes
-  and descriptor helpers for declaring ports, parameters, QoS, and sync.
+- [filter_component_base](filter_component_base/README.md): lifecycle component base classes,
+  descriptor types for declaring ports and shared-memory keys, and helpers for
+  component parameters, QoS, and sync.
 - [component_shm](https://github.com/Maik13579/component_shm): in-process shared-memory registry and
   per-component remapping views for C++ components.
 - [filter_component_factory](filter_component_factory/README.md): saved graph interpreter

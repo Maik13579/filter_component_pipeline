@@ -2,7 +2,9 @@
 
 `filter_component_base` contains the reusable lifecycle component infrastructure for
 ROS filter components. It is header-only and uses the
-`filter_component_base::ros` namespace.
+`filter_component_base::ros` namespace. Descriptor types live in
+`filter_component_base/ros/component_descriptors.hpp`; the base lifecycle
+behavior lives in `filter_component_base/ros/filter_component_base.hpp`.
 
 The central idea is that a component declares port descriptors. Those
 descriptors are the source of the component's subscriptions, publishers, topic
@@ -33,6 +35,10 @@ publish<CloudAdapter>("cloud", filtered_cloud);
 
 The port name in code is the same port name that appears in editor edges and
 saved YAML.
+
+`FilterComponentBase` keeps compatibility aliases such as
+`FilterComponentBase::PortDescriptor`, but code that only needs the descriptor
+types can include `filter_component_base/ros/component_descriptors.hpp`.
 
 ## Synchronization
 
@@ -93,6 +99,9 @@ optional sync parameters.
 `inputPorts()` declares what the component consumes. `outputPorts()` declares
 what it can publish. `configure()` reads component-specific parameters and
 configures any algorithm state before the component processes data.
+Filter-specific parameters are usually declared in the constructor with
+`declareParameter(name, default_value, description)` and read during
+`configure()` with `getParameter<T>(name)`.
 
 ```cpp
 template <typename PointT>
@@ -109,7 +118,10 @@ public:
   explicit MyComponent(const rclcpp::NodeOptions & options)
   : Base("my_filter", options, inputPorts(), outputPorts(), shmKeys())
   {
-    // Declare filter-specific parameters here.
+    this->declareParameter(
+      "filter.scale",
+      1.0,
+      "Scale applied to the filtered cloud.");
   }
 
 protected:
@@ -144,7 +156,9 @@ protected:
 
   void configure() override
   {
-    filter_.configure(readParams());
+    typename MyFilter<PointT>::Params params;
+    params.scale = this->template getParameter<double>("filter.scale");
+    filter_.configure(params);
   }
 
   void process() override
