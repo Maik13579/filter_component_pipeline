@@ -36,9 +36,6 @@ publish<CloudAdapter>("cloud", filtered_cloud);
 The port name in code is the same port name that appears in editor edges and
 saved YAML.
 
-Code that only needs descriptor types can include
-`filter_component_base/ros/component_descriptors.hpp`.
-
 ## Synchronization
 
 Components with one input port process each incoming message independently.
