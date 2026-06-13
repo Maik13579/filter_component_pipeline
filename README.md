@@ -37,53 +37,51 @@ A normal node-based point-cloud pipeline therefore repeats conversion work at
 every step:
 
 ```mermaid
-flowchart LR
-  input["/points<br/><small>PointCloud2</small>"]:::ros
-  filter1["filter 1<br/><small>PointCloud2 -> PCL<br/>process<br/>PCL -> PointCloud2</small>"]:::convert
-  filter2["filter 2<br/><small>PointCloud2 -> PCL<br/>process<br/>PCL -> PointCloud2</small>"]:::convert
-  output["/filtered_points<br/><small>PointCloud2</small>"]:::ros
+flowchart TB
+  input[/ROS in/]
+  filter1[filter 1]
+  filter2[filter 2]
+  output[/ROS out/]
 
   input --> filter1 --> filter2 --> output
 
-  classDef ros fill:#e8f3ff,stroke:#2f6f9f,stroke-width:1.5px,color:#102a43
-  classDef convert fill:#fff2cc,stroke:#b7791f,stroke-width:1.5px,color:#3d2c00
+  classDef default fill:#f8fafc,stroke:#64748b,color:#0f172a
 ```
 
+Each filter receives `PointCloud2`, converts it to the processing type, runs the
+algorithm, converts the result back to `PointCloud2`, and publishes it again.
 Those conversions make each classic node easy to connect on the ROS graph, but
-they are not the data path most algorithms want. This framework keeps the
-ROS-compatible topic boundary while letting filters operate on the processing
-type directly.
+they are repeated at every step.
+
+With filter components, ROS messages stay at the pipeline boundary. Inside the
+component container, filters exchange the processing type directly:
 
 ```mermaid
-flowchart LR
-  input["/points<br/><small>PointCloud2</small>"]:::ros
-  output["/filtered_points<br/><small>PointCloud2</small>"]:::ros
-  debug["RViz / rosbag / external ROS nodes<br/><small>normal ROS compatibility</small>"]:::debug
+flowchart TB
+  input[/ROS in/]
+  output[/ROS out/]
+  debug[ROS tools]
 
-  subgraph process["one component-container process"]
-    direction LR
-    adapter_in["type adapter<br/><small>convert at ROS boundary</small>"]:::adapter
-    f1["filter 1 callback<br/><small>owns unique_ptr&lt;PCL cloud&gt;</small>"]:::filter
-    f2["filter 2 callback<br/><small>owns unique_ptr&lt;PCL cloud&gt;</small>"]:::filter
-    adapter_out["type adapter<br/><small>convert at ROS boundary</small>"]:::adapter
-    shm[("component_shm<br/><small>shared_ptr maps, caches, calibration</small>")]:::shm
+  subgraph process["component container process"]
+    direction TB
+    adapter_in[adapter]
+    f1[filter 1]
+    f2[filter 2]
+    adapter_out[adapter]
+    shm[(component_shm)]
 
     adapter_in --> f1
-    f1 == "intra-process unique_ptr move" ==> f2
+    f1 -->|unique_ptr| f2
     f2 --> adapter_out
-    shm -. "remapped shared keys" .-> f1
-    shm -. "remapped shared keys" .-> f2
+    shm -.->|shared_ptr| f1
+    shm -.->|shared_ptr| f2
   end
 
   input --> adapter_in
   adapter_out --> output
-  output -. "PointCloud2 when observed" .-> debug
+  output -.->|observe| debug
 
-  classDef ros fill:#e8f3ff,stroke:#2f6f9f,stroke-width:1.5px,color:#102a43
-  classDef adapter fill:#e6fffa,stroke:#2c7a7b,stroke-width:1.5px,color:#123b3c
-  classDef filter fill:#edf2ff,stroke:#4c51bf,stroke-width:2px,color:#1a202c
-  classDef shm fill:#f3e8ff,stroke:#805ad5,stroke-width:1.5px,color:#2d1b69
-  classDef debug fill:#f7fafc,stroke:#718096,stroke-dasharray: 5 3,color:#1a202c
+  classDef default fill:#f8fafc,stroke:#64748b,color:#0f172a
 ```
 
 The key pieces are:
