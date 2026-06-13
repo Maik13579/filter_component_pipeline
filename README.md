@@ -4,17 +4,17 @@ This repository contains ROS 2 packages for building filter pipelines from
 loadable components. A pipeline is a graph of filter nodes connected to ROS
 topics through named, typed ports.
 
-A filter node is a ROS 2 lifecycle component that performs one processing step.
-It declares the streams it consumes and produces, exposes parameters for its
-operation, and uses [type adapters](https://ros.org/reps/rep-2007.html) to
-convert between ROS messages and the data representation used by the
-implementation. Topic nodes are graph bindings: they name ROS topics that enter,
-leave, or connect parts of the graph. Topic nodes are not loaded as components.
+A filter is one reusable processing step in that graph. It is implemented as a
+ROS 2 lifecycle component, declares the streams it consumes and produces,
+exposes parameters for its operation, and processes the C++ data type that is
+useful to the algorithm. The ROS message type remains the public interface for
+tools and external nodes.
 
 ![Filter Component Pipeline Editor](filter_component_editor/doc/editor.png)
 
 ## Table of Contents
 
+- [Why Filters?](#why-filters)
 - [Pipeline Model](#pipeline-model)
 - [Packages](#packages)
 - [ROS Filter Chains](#ros-filter-chains)
@@ -24,6 +24,84 @@ leave, or connect parts of the graph. Topic nodes are not loaded as components.
   - [Python Component Container](#python-component-container)
 - [Editor](#editor)
 - [Graph YAML](#graph-yaml)
+
+## Why Filters?
+
+ROS message types are designed for communication. For example,
+`sensor_msgs/msg/PointCloud2` is the standard point-cloud wire format and is
+excellent for publishers, subscribers, rosbag, RViz, and other ROS tools. The
+same type is often awkward inside an algorithm, where a library such as PCL
+expects `pcl::PointCloud<PointT>` or another domain object.
+
+A normal node-based point-cloud pipeline therefore repeats conversion work at
+every step:
+
+```mermaid
+flowchart TB
+  subgraph classic["Classic ROS node pipeline"]
+    direction LR
+    c_in["/points<br/><small>PointCloud2</small>"]:::ros
+    c_f1["filter 1<br/><small>PointCloud2 -> PCL -> process -> PointCloud2</small>"]:::convert
+    c_f2["filter 2<br/><small>PointCloud2 -> PCL -> process -> PointCloud2</small>"]:::convert
+    c_out["/filtered_points<br/><small>PointCloud2</small>"]:::ros
+
+    c_in --> c_f1 --> c_f2 --> c_out
+  end
+
+  subgraph adapted["Filter component pipeline"]
+    direction LR
+    a_in["/points<br/><small>PointCloud2</small>"]:::ros
+    a_adapter_in["type adapter<br/><small>convert at ROS boundary</small>"]:::adapter
+    a_f1["filter 1 callback<br/><small>owns unique_ptr&lt;PCL cloud&gt;</small>"]:::filter
+    a_f2["filter 2 callback<br/><small>owns unique_ptr&lt;PCL cloud&gt;</small>"]:::filter
+    a_adapter_out["type adapter<br/><small>convert at ROS boundary</small>"]:::adapter
+    a_out["/filtered_points<br/><small>PointCloud2</small>"]:::ros
+
+    a_in --> a_adapter_in --> a_f1
+    a_f1 == "intra-process move" ==> a_f2
+    a_f2 --> a_adapter_out --> a_out
+  end
+
+  shm[("component_shm<br/><small>shared_ptr maps, caches, calibration</small>")]:::shm
+  debug["RViz / rosbag / external nodes<br/><small>normal ROS compatibility</small>"]:::debug
+
+  shm -. "remapped shared keys" .-> a_f1
+  shm -. "remapped shared keys" .-> a_f2
+  a_out -. "PointCloud2 when observed" .-> debug
+
+  classDef ros fill:#e8f3ff,stroke:#2f6f9f,stroke-width:1.5px,color:#102a43
+  classDef convert fill:#fff2cc,stroke:#b7791f,stroke-width:1.5px,color:#3d2c00
+  classDef adapter fill:#e6fffa,stroke:#2c7a7b,stroke-width:1.5px,color:#123b3c
+  classDef filter fill:#edf2ff,stroke:#4c51bf,stroke-width:2px,color:#1a202c
+  classDef shm fill:#f3e8ff,stroke:#805ad5,stroke-width:1.5px,color:#2d1b69
+  classDef debug fill:#f7fafc,stroke:#718096,stroke-dasharray: 5 3,color:#1a202c
+```
+
+Those conversions make each classic node easy to connect on the ROS graph, but
+they are not the data path most algorithms want. This framework keeps the
+ROS-compatible topic boundary while letting filters operate on the processing
+type directly.
+
+The key pieces are:
+
+- [Type adapters](https://ros.org/reps/rep-2007.html) define how a ROS message
+  maps to the custom C++ type used by the filter implementation.
+- ROS 2 intra-process communication can pass the adapted custom object between
+  composable filters as `std::unique_ptr`, so ownership moves through the
+  pipeline instead of repeatedly serializing, deserializing, or converting.
+- Each filter has one processing callback. During that callback the filter owns
+  its input data, which makes the local mutation and output ownership model
+  explicit.
+- Debugging and integration remain normal ROS. If RViz, rosbag, or an external
+  node subscribes to a filter topic, ROS publishes the official message type and
+  the adapter performs the conversion at that boundary.
+
+For data that should be shared rather than owned by a single callback, C++
+filters can declare typed shared-memory keys. Shared memory stores objects as
+`std::shared_ptr` inside the component process and supports per-filter key
+remapping, similar in spirit to remapping ROS topics. Use it for shared maps,
+caches, calibration data, or other state that multiple filters need to read or
+update without making it part of the streaming ownership chain.
 
 ## Pipeline Model
 
@@ -36,6 +114,9 @@ The graph has three main concepts:
   the factory.
 - Topic nodes: endpoints and intermediate bindings that assign ROS topic names
   to graph edges.
+
+Topic nodes are graph bindings: they name ROS topics that enter, leave, or
+connect parts of the graph. Topic nodes are not loaded as components.
 
 Logical types describe what kind of data flows through a port. Component
 packages export those logical types and map them to ROS message types through
